@@ -1,0 +1,9 @@
+.DS_Store
+.env
+.env.*
+*.key
+validator_key.json
+__pycache__/
+.venv/
+target/
+node_modules/
