@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Protocol
 
 import asyncio
+import inspect
 
 import httpx
 
@@ -104,6 +105,8 @@ class Attacker:
         history: list[Exchange] = []
         while len(history) < max_attempts:
             spec = self.strategy.next_message(history, self.leads)
+            if inspect.isawaitable(spec):  # LLM-driven strategies are async
+                spec = await spec
             if spec is None:
                 return AttackSummary(len(history), False, "strategy_done")
             code, body = await self.client.attempt(bounty_id, self.api_key, spec)

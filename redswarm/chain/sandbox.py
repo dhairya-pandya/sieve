@@ -1,4 +1,4 @@
-"""Chain backed by the real escrow contract on a local NEAR sandbox node."""
+"""Chain backed by the real escrow contract, on a local NEAR sandbox node or on testnet."""
 from __future__ import annotations
 
 import asyncio
@@ -14,8 +14,6 @@ from redswarm.chain import sandbox_bootstrap as sb
 from redswarm.chain.base import NEAR, Bounty, ChainError, Lead, PayResult
 
 WASM_PATH = Path(__file__).resolve().parents[2] / "contract" / "redswarm_escrow.wasm"
-ESCROW = "escrow.test.near"
-OPERATOR = "operator.test.near"
 
 
 def _new_keypair() -> tuple[str, str]:
@@ -32,11 +30,17 @@ def _bounty(d: dict | None) -> Bounty | None:
 
 
 class SandboxChain:
-    operator = OPERATOR
+    """All accounts are sub-accounts of `root_account`; keys live in memory only.
 
-    def __init__(self, node: sb.SandboxNode, root: Account):
-        self._node = node
-        self._root = root
+    `tag` is appended to every account name so repeated runs on a shared network (testnet)
+    never collide. It is empty on the sandbox, which starts fresh each time.
+    """
+
+    def __init__(self, node: sb.SandboxNode | None, root: Account, rpc_url: str, root_account: str, tag: str = ""):
+        self._node, self._root, self._rpc_url = node, root, rpc_url
+        self._suffix, self._tag = root_account, tag
+        self.escrow = f"escrow{tag}.{root_account}"
+        self.operator = f"operator{tag}.{root_account}"
         self._accounts: dict[str, Account] = {}
 
     @classmethod
@@ -45,20 +49,35 @@ class SandboxChain:
         try:
             root = Account(node.root_account, node.root_key, rpc_addr=node.rpc_url)
             await root.startup()
-            chain = cls(node, root)
-            escrow = await chain._new_account(ESCROW, 100 * NEAR)
-            await chain._new_account(OPERATOR, 10 * NEAR)
-            await escrow.deploy_contract(WASM_PATH.read_bytes())
-            await chain._check(await escrow.function_call(ESCROW, "new", {"operator": OPERATOR}))
+            chain = cls(node, root, node.rpc_url, node.root_account)
+            await chain._deploy(100 * NEAR, 10 * NEAR)
             return chain
         except BaseException:
             await asyncio.to_thread(node.stop)
             raise
 
+    @classmethod
+    async def connect(cls, rpc_url: str, root_account: str, root_key: str, tag: str | None = None) -> "SandboxChain":
+        """Use an existing network (testnet). `root_account` pays for everything, so fund it first.
+        NOT exercised by the automated tests: it needs a funded testnet account."""
+        import secrets
+
+        root = Account(root_account, root_key, rpc_addr=rpc_url)
+        await root.startup()
+        chain = cls(None, root, rpc_url, root_account, tag if tag is not None else "-" + secrets.token_hex(2))
+        await chain._deploy(20 * NEAR, 2 * NEAR)
+        return chain
+
+    async def _deploy(self, escrow_funds: int, operator_funds: int) -> None:
+        escrow = await self._new_account(self.escrow, escrow_funds)
+        await self._new_account(self.operator, operator_funds)
+        await escrow.deploy_contract(WASM_PATH.read_bytes())
+        await self._check(await escrow.function_call(self.escrow, "new", {"operator": self.operator}))
+
     async def _new_account(self, account_id: str, funds: int) -> Account:
         priv, pub = _new_keypair()
         await self._root.create_account(account_id, pub, funds)
-        acc = Account(account_id, priv, rpc_addr=self._node.rpc_url)
+        acc = Account(account_id, priv, rpc_addr=self._rpc_url)
         await acc.startup()
         self._accounts[account_id] = acc
         return acc
@@ -73,14 +92,14 @@ class SandboxChain:
 
     async def _call(self, caller: str, method: str, args: dict, deposit: int = 0):
         acc = self._accounts[caller]
-        return await self._check(await acc.function_call(ESCROW, method, args, amount=deposit))
+        return await self._check(await acc.function_call(self.escrow, method, args, amount=deposit))
 
     async def _view(self, method: str, args: dict):
-        return (await self._root.view_function(ESCROW, method, args)).result
+        return (await self._root.view_function(self.escrow, method, args)).result
 
     # -- accounts ---------------------------------------------------------
     async def create_account(self, name: str, funds: int) -> str:
-        account_id = f"{name}.test.near"
+        account_id = f"{name}{self._tag}.{self._suffix}"
         await self._new_account(account_id, funds)
         return account_id
 
@@ -93,7 +112,8 @@ class SandboxChain:
                 await acc.shutdown()
             except Exception:
                 pass
-        await asyncio.to_thread(self._node.stop)
+        if self._node is not None:
+            await asyncio.to_thread(self._node.stop)
 
     # -- bounties ---------------------------------------------------------
     async def post_bounty(self, poster, target, payees, secret_hash, amount):
@@ -134,7 +154,7 @@ class SandboxChain:
         return int(await self._view("get_credit", {"account": account}))
 
     async def record_fees(self, bounty_id, charges):
-        await self._call(OPERATOR, "record_fees",
+        await self._call(self.operator, "record_fees",
                          {"bounty_id": bounty_id, "charges": [[a, str(f)] for a, f in charges]})
 
     async def withdraw_fees(self, poster):

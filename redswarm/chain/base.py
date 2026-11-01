@@ -79,7 +79,7 @@ class Chain(Protocol):
 
 
 async def make_chain(kind: str) -> Chain:
-    """kind is "fake" or "sandbox"."""
+    """kind is "fake", "sandbox" (local node) or "testnet" (needs REDSWARM_* env vars)."""
     if kind == "fake":
         from redswarm.chain.fake import FakeChain
 
@@ -88,4 +88,12 @@ async def make_chain(kind: str) -> Chain:
         from redswarm.chain.sandbox import SandboxChain
 
         return await SandboxChain.start()
+    if kind == "testnet":
+        from redswarm.chain.sandbox import SandboxChain
+        from redswarm.config import load_settings
+
+        cfg = load_settings()
+        if not (cfg.rpc_url and cfg.root_account and cfg.root_key):
+            raise RuntimeError("testnet needs REDSWARM_RPC_URL, REDSWARM_ROOT_ACCOUNT and REDSWARM_ROOT_KEY")
+        return await SandboxChain.connect(cfg.rpc_url, cfg.root_account, cfg.root_key)
     raise ValueError(f"unknown chain kind: {kind}")
