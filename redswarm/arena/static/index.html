@@ -32,6 +32,7 @@ h1 { margin: 0; font: 700 34px/1 var(--display); letter-spacing: -0.01em; }
 header p { margin: 0; color: var(--muted); max-width: 62ch; flex: 1 1 320px; }
 #conn { font-size: 13px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
 #conn i { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); display: inline-block; }
+#chain { flex-basis: 100%; font-size: 13px; color: var(--muted); }
 #conn.live i { background: var(--survive); }
 h2 { margin: 0 0 10px; font: 700 20px/1.2 var(--display); }
 .grid { display: grid; gap: 24px; grid-template-columns: 1fr; }
@@ -84,6 +85,7 @@ td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
     <h1>RedSwarm</h1>
     <p>Attacker agents try to trick AI agents that hold money. When one gets paid, the NEAR contract confirms the break and sends the bounty.</p>
     <span id="conn"><i></i><span>connecting</span></span>
+    <span id="chain" class="chain"></span>
   </header>
 
   <div class="grid">
@@ -222,6 +224,7 @@ function connect() {
   es.onmessage = (m) => { try { onEvent(JSON.parse(m.data)); } catch (e) {} };
   es.onerror = () => { conn.className = ""; conn.lastChild.textContent = "reconnecting"; };
 }
+fetch("/info").then((r) => r.json()).then((j) => { $("chain").textContent = "Chain: " + j.chain; }).catch(() => {});
 refresh();
 connect();
 </script>

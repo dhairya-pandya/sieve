@@ -50,6 +50,7 @@ def create_app(
     db_path: str = ":memory:",
     target_client: httpx.AsyncClient | None = None,
     target_timeout: float = fees.TARGET_TIMEOUT,
+    chain_label: str = "unknown",
 ) -> FastAPI:
     app = FastAPI(title="RedSwarm arena")
     db = Db(db_path)
@@ -225,6 +226,10 @@ def create_app(
                         "initial": r["initial"], "winner": b.winner, "active": bool(r["active"]),
                         "attempts": stats["n"], "breaks": stats["breaks"]})
         return out
+
+    @app.get("/info")
+    async def info():
+        return {"chain": chain_label}
 
     @app.get("/")
     async def index():

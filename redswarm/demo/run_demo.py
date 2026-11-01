@@ -46,6 +46,15 @@ class HostRouter(httpx.AsyncBaseTransport):
         return await self.routes[request.url.host].handle_async_request(request)
 
 
+def describe_chain(chain: Chain) -> str:
+    name = type(chain).__name__
+    if name == "FakeChain":
+        return "in-memory fake of the escrow contract (no real contract)"
+    if getattr(chain, "_node", None) is not None:
+        return "local NEAR sandbox running the real escrow contract"
+    return "NEAR testnet running the real escrow contract"
+
+
 def short(account: str) -> str:
     return account.split(".")[0]
 
@@ -70,7 +79,7 @@ async def _open_chain(kind: str, emit: Callable[[str], None]) -> Chain:
 
 
 async def run(kind: str = "auto", emit: Callable[[str], None] = print,
-              serve: int | None = None, pace: float = 0.0, llm: bool = False) -> list[str]:
+              serve: int | None = None, pace: float = 0.0, llm: bool = False, host: str = "127.0.0.1") -> list[str]:
     lines: list[str] = []
 
     def out(line: str) -> None:
@@ -82,7 +91,7 @@ async def run(kind: str = "auto", emit: Callable[[str], None] = print,
     chain = await _open_chain(kind, out)
     router = HostRouter()
     target_http = httpx.AsyncClient(transport=router)
-    app = create_app(chain, chain.operator, target_client=target_http)
+    app = create_app(chain, chain.operator, target_client=target_http, chain_label=describe_chain(chain))
     http = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://arena")
     arena = ArenaClient(http)
     server = server_task = None
@@ -91,11 +100,11 @@ async def run(kind: str = "auto", emit: Callable[[str], None] = print,
         if serve:
             import uvicorn
 
-            server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=serve, log_level="warning"))
+            server = uvicorn.Server(uvicorn.Config(app, host=host, port=serve, log_level="warning"))
             server_task = asyncio.create_task(server.serve())
             while not server.started:
                 await asyncio.sleep(0.05)
-            out(f"[info] live page: http://127.0.0.1:{serve}/")
+            out(f"[info] live page: http://{host}:{serve}/")
         vendor = await chain.create_account("acme", NEAR)
         swarm = await build_house_swarm(chain, arena, n=len(STRATEGIES))
         for i, a in enumerate(swarm):
@@ -191,12 +200,13 @@ def main() -> int:
     parser.add_argument("--llm", action="store_true",
                         help="live mode: language-model targets and attackers via NEAR AI Cloud (needs NEAR_AI_API_KEY)")
     parser.add_argument("--serve", type=int, metavar="PORT", help="also serve the live page on this port and keep it up")
+    parser.add_argument("--host", default="127.0.0.1", help="address for --serve (use 0.0.0.0 on a hosting service)")
     parser.add_argument("--pace", type=float, default=None, metavar="SECONDS",
                         help="pause between attacker attempts (default 0.6 with --serve, else 0)")
     args = parser.parse_args()
     pace = args.pace if args.pace is not None else (0.6 if args.serve else 0.0)
     try:
-        asyncio.run(run(args.chain, serve=args.serve, pace=pace, llm=args.llm))
+        asyncio.run(run(args.chain, serve=args.serve, pace=pace, llm=args.llm, host=args.host))
     except KeyboardInterrupt:
         return 0
     except RuntimeError as e:

@@ -1,7 +1,11 @@
 PY ?= .venv/bin/python
 WASM = contract/redswarm_escrow.wasm
 
-.PHONY: test test-all demo contract
+.PHONY: setup test test-all demo contract
+
+setup:
+	python3 -m venv .venv
+	.venv/bin/pip install -e '.[dev]'
 
 test:
 	$(PY) -m pytest -q -m 'not slow'

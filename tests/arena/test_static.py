@@ -32,3 +32,7 @@ async def test_bounties_list_shape_and_label(world):
     row = rows[0]
     assert set(row) == {"bounty_id", "label", "status", "balance", "initial", "winner", "active", "attempts", "breaks"}
     assert (row["status"], row["balance"], row["initial"], row["active"]) == ("open", str(10 * NEAR), str(10 * NEAR), True)
+
+
+async def test_info_reports_which_chain_backs_the_arena(world):
+    assert (await world.client.get("/info")).json() == {"chain": "unknown"}
