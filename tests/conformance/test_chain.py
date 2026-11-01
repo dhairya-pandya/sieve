@@ -11,7 +11,7 @@ GAS_SLACK = NEAR // 20  # real chains charge gas; the fake does not
 _tags = itertools.count(1)
 
 
-@pytest.fixture(scope="module", params=["fake", "sandbox"])
+@pytest.fixture(scope="module", params=["fake", pytest.param("sandbox", marks=pytest.mark.slow)])
 async def chain(request):
     try:
         c = await make_chain(request.param)

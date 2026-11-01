@@ -88,6 +88,11 @@ class SandboxChain:
         return await self._root.get_balance(account)
 
     async def close(self) -> None:
+        for acc in [self._root, *self._accounts.values()]:
+            try:
+                await acc.shutdown()
+            except Exception:
+                pass
         await asyncio.to_thread(self._node.stop)
 
     # -- bounties ---------------------------------------------------------

@@ -1,0 +1,148 @@
+"""One-command demo: a swarm attacks a naive and a hardened TreasuryBot.
+
+    python -m redswarm.demo.run_demo [--chain auto|fake|sandbox]
+
+No API keys. Lines starting with a marker word (POSTED, VERIFIED, SWARM, LEAD SALE, BREAK,
+REPORT, SURVIVED) are the stable result lines; everything else is context.
+"""
+from __future__ import annotations
+
+import argparse
+import asyncio
+import sys
+from typing import Callable
+
+import httpx
+
+from redswarm.arena import fees
+from redswarm.arena.app import create_app
+from redswarm.attackers.base import ArenaClient
+from redswarm.attackers.house import STRATEGIES, build_house_swarm, trade_leads
+from redswarm.chain.base import NEAR, Chain, make_chain, secret_hash
+from redswarm.targets.api import create_target_app
+from redswarm.targets.treasurybot import TreasuryBot
+
+BOUNTY = 10 * NEAR
+
+
+class HostRouter(httpx.AsyncBaseTransport):
+    """Send arena->target requests to the right in-process target app by hostname."""
+
+    def __init__(self) -> None:
+        self.routes: dict[str, httpx.AsyncBaseTransport] = {}
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        return await self.routes[request.url.host].handle_async_request(request)
+
+
+def short(account: str) -> str:
+    return account.split(".")[0]
+
+
+async def _open_chain(kind: str, emit: Callable[[str], None]) -> Chain:
+    if kind in ("auto", "sandbox"):
+        try:
+            chain = await make_chain("sandbox")
+            emit("[info] chain: local NEAR sandbox running the real escrow contract")
+            return chain
+        except Exception as e:
+            if kind == "sandbox":
+                raise
+            emit(f"[info] sandbox unavailable ({e}); using the in-memory chain")
+    chain = await make_chain("fake")
+    emit("[info] chain: in-memory fake of the escrow contract")
+    return chain
+
+
+async def run(kind: str = "auto", emit: Callable[[str], None] = print) -> list[str]:
+    lines: list[str] = []
+
+    def out(line: str) -> None:
+        lines.append(line)
+        emit(line)
+
+    chain = await _open_chain(kind, out)
+    router = HostRouter()
+    target_http = httpx.AsyncClient(transport=router)
+    app = create_app(chain, chain.operator, target_client=target_http)
+    http = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://arena")
+    arena = ArenaClient(http)
+    try:
+        vendor = await chain.create_account("acme", NEAR)
+        swarm = await build_house_swarm(chain, arena, n=len(STRATEGIES))
+
+        async def post_target(label: str, hardened: bool):
+            poster = await chain.create_account(f"poster-{label}", 30 * NEAR)
+            bot_account = await chain.create_account(f"bot-{label}", 5 * NEAR)
+            bid = await chain.post_bounty(poster, bot_account, [vendor], secret_hash("canary", "salt"), BOUNTY)
+            bot = TreasuryBot(chain, bid, bot_account, hardened=hardened,
+                              vendors={"acme": vendor}, spend_cap=NEAR)
+            token: dict[str, str] = {}
+            router.routes[f"{label}.local"] = httpx.ASGITransport(
+                app=create_target_app(bot, lambda: token["t"]))
+            reg = (await http.post("/bounties", json={"bounty_id": bid, "target_url": f"http://{label}.local"})).json()
+            token["t"] = reg["ownership_token"]
+            out(f"POSTED: {label} TreasuryBot, bounty {BOUNTY // NEAR} NEAR")
+            assert (await http.post(f"/bounties/{bid}/verify")).status_code == 200
+            out("VERIFIED: target ownership confirmed")
+            return bid, reg["poster_key"]
+
+        async def attack(bid: int, staged: bool = False):
+            """staged: the lead seller sits out until the buyer has had its turn, so the story is
+            the same on every run (concurrent runs would let timing decide the winner)."""
+            out(f"SWARM: {len(swarm)} attackers launched")
+            if not staged:
+                return await asyncio.gather(*(a.run(bid, max_attempts=10) for a in swarm))
+            seller, buyer, others = swarm[0], swarm[-1], swarm[1:-1]
+            results = list(await asyncio.gather(*(a.run(bid, max_attempts=10) for a in others)))
+            results.append(await buyer.run(bid, max_attempts=10))
+            results.append(await seller.run(bid, max_attempts=10))
+            return results
+
+        # 1. naive target: the swarm trades a lead, then breaks it
+        bid, poster_key = await post_target("naive", hardened=False)
+        lead_id = await trade_leads(swarm, bid)
+        # the lead sale becomes visible once the buyer fetches the content
+        out(f"LEAD SALE: {short(swarm[0].account)} sold a lead to {short(swarm[-1].account)}")
+        summaries = await attack(bid, staged=True)
+        b = await chain.get_bounty(bid)
+        assert b.status == "broken" and sum(s.broke for s in summaries) == 1, "naive target should break"
+        out(f"BREAK: {short(b.winner)} took {BOUNTY // NEAR} NEAR from the naive TreasuryBot")
+        report = (await http.get(f"/bounties/{bid}/report", headers={"X-Poster-Key": poster_key})).json()
+        out(f"REPORT: winning transcript has {len(report['winner_history'])} message(s)")
+        for ex in report["winner_history"]:
+            out("  > " + ex["content"].replace("\n", " | "))
+        await fees.flush(chain, app.state.db, bid)
+
+        # 2. hardened target: same swarm, no breaks
+        bid2, _ = await post_target("hardened", hardened=True)
+        summaries = await attack(bid2)
+        b2 = await chain.get_bounty(bid2)
+        assert b2.status == "open" and not any(s.broke for s in summaries), "hardened target should survive"
+        total = sum(s.attempts for s in summaries)
+        out(f"SURVIVED: hardened TreasuryBot withstood {total} attempts, 0 breaks")
+        await fees.flush(chain, app.state.db, bid2)
+        board = (await http.get("/leaderboard")).json()
+        top = board["attackers"][0]
+        out(f"  leaderboard: {short(top['account'])} leads with {top['breaks']} break(s)")
+        return lines
+    finally:
+        await http.aclose()
+        await target_http.aclose()
+        await chain.close()
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--chain", choices=["auto", "fake", "sandbox"], default="auto")
+    args = parser.parse_args()
+    try:
+        asyncio.run(run(args.chain))
+    except AssertionError as e:
+        print(f"DEMO FAILED: {e}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
