@@ -13,6 +13,8 @@ dependencies = [
   "httpx",
   "pydantic",
   "py-near",
+  "pynacl",
+  "base58",
   "openai",
 ]
 
