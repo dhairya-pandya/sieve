@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from redswarm.arena import fees
 from redswarm.arena.db import Db
 from redswarm.arena.events import EventBus
-from redswarm.chain.base import Chain
+from redswarm.chain.base import Chain, content_hash
 
 
 class NewBounty(BaseModel):
@@ -25,6 +25,11 @@ class NewBounty(BaseModel):
 
 class NewAttacker(BaseModel):
     account: str
+
+
+class LeadContent(BaseModel):
+    lead_id: int
+    content: str
 
 
 class Attempt(BaseModel):
@@ -158,6 +163,48 @@ def create_app(
                 if outcome == "break":
                     bus.publish("break", {"bounty_id": bounty_id, "winner": account, "amount": str(payout)})
         return {"attempt_id": attempt_id, "status": status, "reply": reply, "outcome": outcome}
+
+    @app.post("/bounties/{bounty_id}/leads")
+    async def publish_lead(bounty_id: int, body: LeadContent, x_api_key: str | None = Header(default=None)):
+        account = attacker_for(x_api_key)
+        lead = await chain.get_lead(body.lead_id)
+        if lead is None or lead.bounty_id != bounty_id:
+            raise HTTPException(404, "no such lead on this bounty")
+        if lead.author != account:
+            raise HTTPException(403, "only the lead's author can publish its content")
+        if content_hash(body.content) != lead.content_hash:
+            raise HTTPException(400, "content does not match the hash posted on chain")
+        db.execute("INSERT OR REPLACE INTO leads(lead_id, bounty_id, author, content) VALUES (?,?,?,?)",
+                   (body.lead_id, bounty_id, account, body.content))
+        bus.publish("lead_posted", {"lead_id": body.lead_id, "bounty_id": bounty_id, "author": account,
+                                    "title": lead.title, "price": str(lead.price)})
+        return {"published": True}
+
+    @app.get("/leads")
+    async def list_leads():
+        out = []
+        for row in db.all("SELECT lead_id FROM leads ORDER BY lead_id"):
+            lead = await chain.get_lead(row["lead_id"])
+            sold = db.one("SELECT COUNT(*) n FROM lead_sales WHERE lead_id=?", (row["lead_id"],))["n"]
+            out.append({"lead_id": lead.id, "bounty_id": lead.bounty_id, "author": lead.author,
+                        "title": lead.title, "price": str(lead.price), "sold": sold})
+        return out
+
+    @app.get("/leads/{lead_id}/content")
+    async def lead_content(lead_id: int, x_api_key: str | None = Header(default=None)):
+        account = attacker_for(x_api_key)
+        row = db.one("SELECT author, bounty_id, content FROM leads WHERE lead_id=?", (lead_id,))
+        if row is None:
+            raise HTTPException(404, "no such lead")
+        if not await chain.is_unlocked(lead_id, account):
+            raise HTTPException(403, "unlock the lead on chain first")
+        if account != row["author"] and not db.one(
+                "SELECT 1 FROM lead_sales WHERE lead_id=? AND buyer=?", (lead_id, account)):
+            db.execute("INSERT INTO lead_sales(lead_id, buyer) VALUES (?,?)", (lead_id, account))
+            lead = await chain.get_lead(lead_id)
+            bus.publish("lead_sold", {"lead_id": lead_id, "bounty_id": row["bounty_id"], "buyer": account,
+                                      "author": row["author"], "price": str(lead.price)})
+        return {"content": row["content"]}
 
     @app.get("/leaderboard")
     async def leaderboard():

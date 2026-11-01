@@ -13,6 +13,10 @@ CREATE TABLE IF NOT EXISTS attempts (
     channel TEXT NOT NULL, kind TEXT NOT NULL, content TEXT NOT NULL, reply TEXT,
     status TEXT NOT NULL, outcome TEXT NOT NULL, payout TEXT NOT NULL DEFAULT '0',
     created REAL NOT NULL);
+CREATE TABLE IF NOT EXISTS leads (
+    lead_id INTEGER PRIMARY KEY, bounty_id INTEGER NOT NULL, author TEXT NOT NULL, content TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS lead_sales (
+    lead_id INTEGER NOT NULL, buyer TEXT NOT NULL, PRIMARY KEY (lead_id, buyer));
 CREATE TABLE IF NOT EXISTS pending_fees (
     id INTEGER PRIMARY KEY AUTOINCREMENT, bounty_id INTEGER NOT NULL, attacker TEXT NOT NULL,
     amount TEXT NOT NULL, flushed INTEGER NOT NULL DEFAULT 0);

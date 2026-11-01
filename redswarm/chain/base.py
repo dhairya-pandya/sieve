@@ -45,6 +45,10 @@ def secret_hash(secret: str, salt: str) -> str:
     return hashlib.sha256((secret + salt).encode()).hexdigest()
 
 
+def content_hash(content: str) -> str:
+    return hashlib.sha256(content.encode()).hexdigest()
+
+
 class Chain(Protocol):
     operator: str
 

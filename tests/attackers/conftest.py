@@ -40,7 +40,7 @@ class Rig:
         if credit:
             await self.chain.deposit_credit(acct, credit)
         key = await self.arena.register_attacker(acct)
-        return Attacker(acct, key, strategy_factory(acct), self.arena)
+        return Attacker(acct, key, strategy_factory(acct), self.arena, chain=self.chain)
 
     async def close(self):
         await self.http.aclose()
