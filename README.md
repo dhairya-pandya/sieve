@@ -6,7 +6,7 @@ Built for the NEAR Hackathon (1 to 14 November 2026), in the AI Security & Defen
 
 ## Status
 
-Design stage. The design is in [docs/superpowers/specs/2026-11-01-redswarm-design.md](docs/superpowers/specs/2026-11-01-redswarm-design.md). No code exists yet, and all of it will be written during the hackathon window. Run instructions will be added here once there is something to run.
+In progress. The escrow contract (`contract/`) is written and unit tested. The arena, agents and demo are not built yet. All code is written during the hackathon window. Run instructions will be added here once there is something to run.
 
 ## The problem
 
