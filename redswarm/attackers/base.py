@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Protocol
 
+import asyncio
+
 import httpx
 
 from redswarm.chain.base import Chain, content_hash
@@ -80,6 +82,7 @@ class Attacker:
     client: ArenaClient
     leads: list[str] = field(default_factory=list)
     chain: Chain | None = None
+    pause: float = 0.0  # seconds between attempts, so a live page is watchable
 
     async def post_lead(self, bounty_id: int, title: str, price: int, content: str) -> int:
         """Sell a lead: commit its hash on chain, then hand the content to the arena."""
@@ -108,6 +111,8 @@ class Attacker:
                 history.append(Exchange(spec, body["status"], body["reply"], body["outcome"]))
                 if body["outcome"] == "break":
                     return AttackSummary(len(history), True, "broke_it")
+                if self.pause:
+                    await asyncio.sleep(self.pause)
             elif code == 402:
                 return AttackSummary(len(history), False, "no_credit")
             elif code == 409 and body.get("detail") == "bounty_closed":

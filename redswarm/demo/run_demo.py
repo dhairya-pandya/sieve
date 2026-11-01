@@ -54,7 +54,8 @@ async def _open_chain(kind: str, emit: Callable[[str], None]) -> Chain:
     return chain
 
 
-async def run(kind: str = "auto", emit: Callable[[str], None] = print) -> list[str]:
+async def run(kind: str = "auto", emit: Callable[[str], None] = print,
+              serve: int | None = None, pace: float = 0.0) -> list[str]:
     lines: list[str] = []
 
     def out(line: str) -> None:
@@ -67,9 +68,20 @@ async def run(kind: str = "auto", emit: Callable[[str], None] = print) -> list[s
     app = create_app(chain, chain.operator, target_client=target_http)
     http = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://arena")
     arena = ArenaClient(http)
+    server = server_task = None
     try:
+        if serve:
+            import uvicorn
+
+            server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=serve, log_level="warning"))
+            server_task = asyncio.create_task(server.serve())
+            while not server.started:
+                await asyncio.sleep(0.05)
+            out(f"[info] live page: http://127.0.0.1:{serve}/")
         vendor = await chain.create_account("acme", NEAR)
         swarm = await build_house_swarm(chain, arena, n=len(STRATEGIES))
+        for a in swarm:
+            a.pause = pace
 
         async def post_target(label: str, hardened: bool):
             poster = await chain.create_account(f"poster-{label}", 30 * NEAR)
@@ -80,11 +92,13 @@ async def run(kind: str = "auto", emit: Callable[[str], None] = print) -> list[s
             token: dict[str, str] = {}
             router.routes[f"{label}.local"] = httpx.ASGITransport(
                 app=create_target_app(bot, lambda: token["t"]))
-            reg = (await http.post("/bounties", json={"bounty_id": bid, "target_url": f"http://{label}.local"})).json()
+            reg = (await http.post("/bounties", json={"bounty_id": bid, "target_url": f"http://{label}.local",
+                                                       "label": f"{label} TreasuryBot"})).json()
             token["t"] = reg["ownership_token"]
             out(f"POSTED: {label} TreasuryBot, bounty {BOUNTY // NEAR} NEAR")
             assert (await http.post(f"/bounties/{bid}/verify")).status_code == 200
             out("VERIFIED: target ownership confirmed")
+            await asyncio.sleep(pace * 3)
             return bid, reg["poster_key"]
 
         async def attack(bid: int, staged: bool = False):
@@ -125,8 +139,15 @@ async def run(kind: str = "auto", emit: Callable[[str], None] = print) -> list[s
         board = (await http.get("/leaderboard")).json()
         top = board["attackers"][0]
         out(f"  leaderboard: {short(top['account'])} leads with {top['breaks']} break(s)")
+        if serve:
+            out(f"[info] poster key for the naive bounty report: {poster_key}")
+            out("[info] page stays up, press Ctrl-C to stop")
+            await asyncio.Event().wait()
         return lines
     finally:
+        if server is not None:
+            server.should_exit = True
+            await server_task
         await http.aclose()
         await target_http.aclose()
         await chain.close()
@@ -135,9 +156,15 @@ async def run(kind: str = "auto", emit: Callable[[str], None] = print) -> list[s
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--chain", choices=["auto", "fake", "sandbox"], default="auto")
+    parser.add_argument("--serve", type=int, metavar="PORT", help="also serve the live page on this port and keep it up")
+    parser.add_argument("--pace", type=float, default=None, metavar="SECONDS",
+                        help="pause between attacker attempts (default 0.6 with --serve, else 0)")
     args = parser.parse_args()
+    pace = args.pace if args.pace is not None else (0.6 if args.serve else 0.0)
     try:
-        asyncio.run(run(args.chain))
+        asyncio.run(run(args.chain, serve=args.serve, pace=pace))
+    except KeyboardInterrupt:
+        return 0
     except AssertionError as e:
         print(f"DEMO FAILED: {e}", file=sys.stderr)
         return 1

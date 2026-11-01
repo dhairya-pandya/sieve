@@ -9,7 +9,9 @@ from typing import Literal
 
 import httpx
 from fastapi import FastAPI, Header, HTTPException
-from fastapi.responses import StreamingResponse
+from pathlib import Path
+
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
 from redswarm.arena import fees
@@ -18,9 +20,13 @@ from redswarm.arena.events import EventBus
 from redswarm.chain.base import Chain, content_hash
 
 
+STATIC = Path(__file__).parent / "static"
+
+
 class NewBounty(BaseModel):
     bounty_id: int
     target_url: str
+    label: str = ""
 
 
 class NewAttacker(BaseModel):
@@ -75,8 +81,9 @@ def create_app(
         if db.one("SELECT id FROM bounties WHERE id=?", (body.bounty_id,)):
             raise HTTPException(409, "bounty already registered")
         token, poster_key = secrets.token_urlsafe(16), secrets.token_urlsafe(24)
-        db.execute("INSERT INTO bounties(id, target_url, token, poster_key) VALUES (?,?,?,?)",
-                   (body.bounty_id, body.target_url.rstrip("/"), token, poster_key))
+        db.execute("INSERT INTO bounties(id, target_url, token, poster_key, label, initial) VALUES (?,?,?,?,?,?)",
+                   (body.bounty_id, body.target_url.rstrip("/"), token, poster_key, body.label.strip()[:60],
+                    str(b.balance)))
         return {"ownership_token": token, "poster_key": poster_key}
 
     @app.post("/bounties/{bounty_id}/verify")
@@ -157,6 +164,7 @@ def create_app(
                 (bounty_id, account, body.channel, body.kind, body.content, reply, status, outcome,
                  str(payout), time.time()))
             bus.publish("attempt", {"attempt_id": attempt_id, "bounty_id": bounty_id, "attacker": account,
+                                    "channel": body.channel, "kind": body.kind,
                                     "status": status, "outcome": outcome})
             if status == "ok" and (await chain.get_bounty(bounty_id)).status != "open":
                 await fees.flush(chain, db, bounty_id)
@@ -206,6 +214,22 @@ def create_app(
                                       "author": row["author"], "price": str(lead.price)})
         return {"content": row["content"]}
 
+    @app.get("/bounties")
+    async def list_bounties():
+        out = []
+        for r in db.all("SELECT id, label, initial, active FROM bounties ORDER BY id"):
+            b = await chain.get_bounty(r["id"])
+            stats = db.one("SELECT COUNT(*) n, COALESCE(SUM(outcome='break'), 0) breaks FROM attempts"
+                           " WHERE bounty_id=? AND status='ok'", (r["id"],))
+            out.append({"bounty_id": r["id"], "label": r["label"], "status": b.status, "balance": str(b.balance),
+                        "initial": r["initial"], "winner": b.winner, "active": bool(r["active"]),
+                        "attempts": stats["n"], "breaks": stats["breaks"]})
+        return out
+
+    @app.get("/")
+    async def index():
+        return FileResponse(STATIC / "index.html")
+
     @app.get("/leaderboard")
     async def leaderboard():
         attackers = [
@@ -218,10 +242,11 @@ def create_app(
             rows = db.all("SELECT payout FROM attempts WHERE attacker=? AND outcome='break'", (a["account"],))
             a["earnings"] = str(sum(int(x["payout"]) for x in rows))
         targets = [
-            {"bounty_id": r["bounty_id"], "attempts": r["n"], "breaks": r["breaks"],
+            {"bounty_id": r["bounty_id"], "label": r["label"], "attempts": r["n"], "breaks": r["breaks"],
              "survived": r["n"] if not r["breaks"] else 0}
-            for r in db.all("SELECT bounty_id, COUNT(*) n, SUM(outcome='break') breaks FROM attempts"
-                            " WHERE status='ok' GROUP BY bounty_id")
+            for r in db.all("SELECT a.bounty_id, b.label, COUNT(*) n, SUM(a.outcome='break') breaks"
+                            " FROM attempts a JOIN bounties b ON b.id=a.bounty_id"
+                            " WHERE a.status='ok' GROUP BY a.bounty_id")
         ]
         return {"attackers": sorted(attackers, key=lambda a: -a["breaks"]), "targets": targets}
 
