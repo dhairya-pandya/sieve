@@ -41,6 +41,17 @@ pub struct Bounty {
     pub winner: Option<AccountId>,
 }
 
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Debug)]
+pub struct Lead {
+    pub id: u64,
+    pub bounty_id: u64,
+    pub author: AccountId,
+    pub title: String,
+    pub price: U128,
+    pub content_hash: String,
+}
+
 #[near(contract_state)]
 #[derive(PanicOnDefault)]
 pub struct Contract {
@@ -48,6 +59,11 @@ pub struct Contract {
     next_bounty_id: u64,
     bounties: LookupMap<u64, Bounty>,
     attackers: LookupMap<AccountId, bool>,
+    credits: LookupMap<AccountId, u128>,
+    fees: LookupMap<AccountId, u128>,
+    next_lead_id: u64,
+    leads: LookupMap<u64, Lead>,
+    unlocked: LookupMap<String, bool>,
 }
 
 #[near]
@@ -59,6 +75,11 @@ impl Contract {
             next_bounty_id: 1,
             bounties: LookupMap::new(b"b".to_vec()),
             attackers: LookupMap::new(b"a".to_vec()),
+            credits: LookupMap::new(b"c".to_vec()),
+            fees: LookupMap::new(b"f".to_vec()),
+            next_lead_id: 1,
+            leads: LookupMap::new(b"l".to_vec()),
+            unlocked: LookupMap::new(b"u".to_vec()),
         }
     }
 
@@ -168,12 +189,116 @@ impl Contract {
     pub fn get_bounty(&self, bounty_id: u64) -> Option<Bounty> {
         self.bounties.get(&bounty_id).cloned()
     }
+
+    pub fn claim_secret(&mut self, bounty_id: u64, secret: String, salt: String) -> bool {
+        let caller = env::predecessor_account_id();
+        require!(self.attackers.contains_key(&caller), "register as an attacker first");
+        let mut b = self.load(bounty_id);
+        if b.status != Status::Open {
+            return false;
+        }
+        if sha256_hex(&format!("{secret}{salt}")) != b.secret_hash {
+            return false;
+        }
+        let won = b.balance.0;
+        b.balance = U128(0);
+        b.status = Status::Broken;
+        b.winner = Some(caller.clone());
+        self.bounties.insert(bounty_id, b);
+        if won > 0 {
+            let _ = Promise::new(caller.clone()).transfer(NearToken::from_yoctonear(won));
+        }
+        log_event(
+            "break",
+            &format!("{{\"bounty_id\":{bounty_id},\"winner\":\"{caller}\",\"amount\":\"{won}\",\"kind\":\"secret\"}}"),
+        );
+        true
+    }
+
+    #[payable]
+    pub fn deposit_credit(&mut self) {
+        let who = env::predecessor_account_id();
+        let deposit = env::attached_deposit().as_yoctonear();
+        require!(deposit > 0, "attach a deposit");
+        let now = self.credits.get(&who).copied().unwrap_or(0);
+        self.credits.insert(who, now + deposit);
+    }
+
+    pub fn get_credit(&self, account: AccountId) -> U128 {
+        U128(self.credits.get(&account).copied().unwrap_or(0))
+    }
+
+    pub fn record_fees(&mut self, bounty_id: u64, charges: Vec<(AccountId, U128)>) {
+        require!(env::predecessor_account_id() == self.operator, "only the operator can record fees");
+        let poster = self.load(bounty_id).poster;
+        let mut total = 0u128;
+        for (account, fee) in charges {
+            let credit = self.credits.get(&account).copied().unwrap_or(0);
+            require!(credit >= fee.0, "insufficient credit");
+            self.credits.insert(account, credit - fee.0);
+            total += fee.0;
+        }
+        let owed = self.fees.get(&poster).copied().unwrap_or(0);
+        self.fees.insert(poster, owed + total);
+        log_event("fees", &format!("{{\"bounty_id\":{bounty_id},\"total\":\"{total}\"}}"));
+    }
+
+    pub fn withdraw_fees(&mut self) -> U128 {
+        let who = env::predecessor_account_id();
+        let owed = self.fees.get(&who).copied().unwrap_or(0);
+        self.fees.insert(who.clone(), 0);
+        if owed > 0 {
+            let _ = Promise::new(who).transfer(NearToken::from_yoctonear(owed));
+        }
+        U128(owed)
+    }
+
+    pub fn get_fees(&self, poster: AccountId) -> U128 {
+        U128(self.fees.get(&poster).copied().unwrap_or(0))
+    }
+
+    pub fn post_lead(&mut self, bounty_id: u64, title: String, price: U128, content_hash: String) -> u64 {
+        let author = env::predecessor_account_id();
+        require!(self.attackers.contains_key(&author), "register as an attacker first");
+        require!(self.bounties.contains_key(&bounty_id), "no such bounty");
+        let id = self.next_lead_id;
+        self.next_lead_id += 1;
+        self.leads.insert(id, Lead { id, bounty_id, author: author.clone(), title, price, content_hash });
+        log_event("lead_posted", &format!("{{\"lead_id\":{id},\"bounty_id\":{bounty_id},\"author\":\"{author}\",\"price\":\"{}\"}}", price.0));
+        id
+    }
+
+    #[payable]
+    pub fn unlock_lead(&mut self, lead_id: u64) {
+        let lead = self.leads.get(&lead_id).cloned().unwrap_or_else(|| env::panic_str("no such lead"));
+        let buyer = env::predecessor_account_id();
+        require!(env::attached_deposit().as_yoctonear() == lead.price.0, "attach the exact price");
+        require!(!self.is_unlocked(lead_id, buyer.clone()), "already unlocked");
+        self.unlocked.insert(format!("{lead_id}:{buyer}"), true);
+        let _ = Promise::new(lead.author.clone()).transfer(NearToken::from_yoctonear(lead.price.0));
+        log_event("lead_unlocked", &format!("{{\"lead_id\":{lead_id},\"buyer\":\"{buyer}\",\"author\":\"{}\"}}", lead.author));
+    }
+
+    pub fn get_lead(&self, lead_id: u64) -> Option<Lead> {
+        self.leads.get(&lead_id).cloned()
+    }
+
+    pub fn is_unlocked(&self, lead_id: u64, account: AccountId) -> bool {
+        match self.leads.get(&lead_id) {
+            Some(lead) => lead.author == account || self.unlocked.contains_key(&format!("{lead_id}:{account}")),
+            None => false,
+        }
+    }
 }
 
 impl Contract {
     fn load(&self, bounty_id: u64) -> Bounty {
         self.bounties.get(&bounty_id).cloned().unwrap_or_else(|| env::panic_str("no such bounty"))
     }
+}
+
+pub(crate) fn sha256_hex(input: &str) -> String {
+    env::sha256(input.as_bytes()).iter().map(|b| format!("{b:02x}")).collect()
 }
 
 fn log_event(name: &str, data: &str) {

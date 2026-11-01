@@ -137,3 +137,122 @@ fn close_refunds_remaining_and_blocks_further_pay() {
     let r = c.pay(id, acc("vendor"), U128(ONE), "inv-10".into());
     assert_eq!(r.outcome, Outcome::Refused);
 }
+
+// ---- Task 3: secret break, credit, fees, leads ----
+
+fn secret_hash() -> String {
+    sha256_hex("s3cretsalt")
+}
+
+fn setup_with_secret() -> (Contract, u64) {
+    testing_env!(ctx("deployer", NearToken::from_yoctonear(0)).build());
+    let mut c = Contract::new(acc("op"));
+    testing_env!(ctx("poster", TEN).build());
+    let id = c.post_bounty(acc("target"), vec![acc("vendor")], secret_hash());
+    testing_env!(ctx("atk", NearToken::from_yoctonear(0)).build());
+    c.register_attacker();
+    testing_env!(ctx("atk2", NearToken::from_yoctonear(0)).build());
+    c.register_attacker();
+    (c, id)
+}
+
+#[test]
+fn claim_secret_right_pays_and_closes() {
+    let (mut c, id) = setup_with_secret();
+    as_account("atk");
+    assert!(c.claim_secret(id, "s3cret".into(), "salt".into()));
+    let b = c.get_bounty(id).unwrap();
+    assert_eq!(b.status, Status::Broken);
+    assert_eq!(b.winner, Some(acc("atk")));
+    assert_eq!(b.balance.0, 0);
+}
+
+#[test]
+fn claim_secret_wrong_returns_false_and_keeps_open() {
+    let (mut c, id) = setup_with_secret();
+    as_account("atk");
+    assert!(!c.claim_secret(id, "guess".into(), "salt".into()));
+    let b = c.get_bounty(id).unwrap();
+    assert_eq!(b.status, Status::Open);
+    assert_eq!(b.balance.0, 10 * ONE);
+}
+
+#[test]
+fn claim_secret_after_break_returns_false() {
+    let (mut c, id) = setup_with_secret();
+    as_account("atk");
+    assert!(c.claim_secret(id, "s3cret".into(), "salt".into()));
+    as_account("atk2");
+    assert!(!c.claim_secret(id, "s3cret".into(), "salt".into()));
+    assert_eq!(c.get_bounty(id).unwrap().winner, Some(acc("atk")));
+}
+
+fn fund_credit(c: &mut Contract, who: &str, amount: u128) {
+    testing_env!(ctx(who, NearToken::from_yoctonear(amount)).build());
+    c.deposit_credit();
+}
+
+#[test]
+#[should_panic(expected = "only the operator")]
+fn record_fees_only_operator() {
+    let (mut c, id) = setup_with_secret();
+    fund_credit(&mut c, "atk", ONE);
+    as_account("atk");
+    c.record_fees(id, vec![(acc("atk"), U128(1))]);
+}
+
+#[test]
+fn record_fees_debits_credit_and_credits_poster() {
+    let (mut c, id) = setup_with_secret();
+    fund_credit(&mut c, "atk", ONE);
+    fund_credit(&mut c, "atk2", ONE);
+    as_account("op");
+    c.record_fees(id, vec![(acc("atk"), U128(300)), (acc("atk2"), U128(200))]);
+    assert_eq!(c.get_credit(acc("atk")).0, ONE - 300);
+    assert_eq!(c.get_credit(acc("atk2")).0, ONE - 200);
+    assert_eq!(c.get_fees(acc("poster")).0, 500);
+    as_account("poster");
+    assert_eq!(c.withdraw_fees().0, 500);
+    assert_eq!(c.get_fees(acc("poster")).0, 0);
+}
+
+#[test]
+#[should_panic(expected = "insufficient credit")]
+fn record_fees_panics_when_credit_short() {
+    let (mut c, id) = setup_with_secret();
+    fund_credit(&mut c, "atk", 100);
+    as_account("op");
+    c.record_fees(id, vec![(acc("atk"), U128(101))]);
+}
+
+fn post_lead_as_atk(c: &mut Contract, id: u64) -> u64 {
+    as_account("atk");
+    c.post_lead(id, "trusts emails quoting an invoice".into(), U128(ONE), "lead-hash".into())
+}
+
+#[test]
+#[should_panic(expected = "exact price")]
+fn unlock_lead_requires_exact_price() {
+    let (mut c, id) = setup_with_secret();
+    let lead = post_lead_as_atk(&mut c, id);
+    testing_env!(ctx("atk2", NearToken::from_yoctonear(ONE - 1)).build());
+    c.unlock_lead(lead);
+}
+
+#[test]
+fn unlock_lead_marks_buyer_and_pays_author() {
+    let (mut c, id) = setup_with_secret();
+    let lead = post_lead_as_atk(&mut c, id);
+    assert!(!c.is_unlocked(lead, acc("atk2")));
+    testing_env!(ctx("atk2", NearToken::from_yoctonear(ONE)).build());
+    c.unlock_lead(lead);
+    assert!(c.is_unlocked(lead, acc("atk2")));
+    assert_eq!(c.get_lead(lead).unwrap().author, acc("atk"));
+}
+
+#[test]
+fn author_is_unlocked_by_default() {
+    let (mut c, id) = setup_with_secret();
+    let lead = post_lead_as_atk(&mut c, id);
+    assert!(c.is_unlocked(lead, acc("atk")));
+}
