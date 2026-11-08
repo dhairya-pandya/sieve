@@ -114,6 +114,7 @@ Breaks, payouts and lead unlocks are enforced by the contract. The arena operato
 | `redswarm/attackers/` | Attacker runner, scripted strategies, house swarm, language-model strategy |
 | `redswarm/demo/` | The one-command demo and its expected output |
 | `tests/` | Arena, attacker, target, demo and live-mode tests, plus a chain suite that every chain implementation must pass |
+| `skills/` | Agent skills (SKILL.md format) for working on RedSwarm and for attacking its targets, with sources and licenses in `skills/README.md` |
 
 ## Limits
 
