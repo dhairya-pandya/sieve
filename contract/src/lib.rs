@@ -3,6 +3,7 @@ use near_sdk::store::{LookupMap, Vector};
 use near_sdk::{env, near, require, AccountId, NearToken, PanicOnDefault, Promise};
 
 mod request;
+mod review;
 
 pub const MAX_TITLE: usize = 200;
 pub const MAX_BODY: usize = 8_000;
@@ -165,6 +166,43 @@ impl Sieve {
         self.proposals.len() as u64 - 1
     }
 
+    /// Post a TEE-signed review for one slot. Anyone may call; the contract trusts only registered model keys.
+    /// Within the window the lowest valid score for a slot wins. Returns the slot's score after this review.
+    pub fn post_review(&mut self, proposal_id: u64, slot: u8, response: Base64VecU8, signature_hex: String, public_key_hex: String) -> u8 {
+        let response: Vec<u8> = response.into();
+        require!(response.len() <= review::MAX_RESPONSE, "response too large");
+        let p = self.proposals.get(proposal_id as u32).expect("no such proposal").clone();
+        let round = self.rounds.get(p.round_id as u32).expect("no such round").clone();
+        let model = round.models.get(slot as usize).expect("no such slot").clone();
+        let now = env::block_timestamp_ms();
+        require!(now <= p.submitted_ms + round.window_ms, "review window closed");
+        let pk_hex = public_key_hex.to_ascii_lowercase();
+        let signer = self.signers.get(&pk_hex).filter(|s| s.model == model).expect("key is not registered for this model");
+        require!(now < signer.expires_ms, "signer key expired");
+        let request = self.request_bytes(proposal_id, slot);
+        let response_hash = review::hex(&env::sha256(&response));
+        let text = format!("{model}:{}:{response_hash}", review::hex(&env::sha256(&request)));
+        let sig = review::unhex::<64>(&signature_hex.to_ascii_lowercase()).expect("bad signature");
+        let pk = review::unhex::<32>(&pk_hex).expect("bad public key");
+        require!(env::ed25519_verify(&sig, text.as_bytes(), &pk), "bad signature");
+        let parsed = review::parse(&response).unwrap_or_else(|e| env::panic_str(e));
+        let entry = &mut self.proposals.get_mut(proposal_id as u32).unwrap().slots[slot as usize];
+        if entry.as_ref().map_or(true, |s| parsed.score < s.score) {
+            *entry = Some(Slot { score: parsed.score, flags: parsed.flags.clone(), response_hash });
+        }
+        let kept = entry.as_ref().unwrap().score;
+        let event = near_sdk::serde_json::json!({
+            "standard": "sieve", "version": "1.0.0", "event": "review",
+            "data": [{
+                "proposal_id": proposal_id, "slot": slot, "model": model, "score": parsed.score,
+                "flags": parsed.flags, "public_key": pk_hex, "signature": signature_hex.to_ascii_lowercase(),
+                "response": near_sdk::base64::Engine::encode(&near_sdk::base64::engine::general_purpose::STANDARD, &response),
+            }]
+        });
+        env::log_str(&format!("EVENT_JSON:{event}"));
+        kept
+    }
+
     /// The exact request bytes a reviewer must send to NEAR AI Cloud for this proposal and slot.
     pub fn review_request(&self, proposal_id: u64, slot: u8) -> Base64VecU8 {
         Base64VecU8(self.request_bytes(proposal_id, slot))
@@ -213,3 +251,5 @@ impl Sieve {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod review_tests;
