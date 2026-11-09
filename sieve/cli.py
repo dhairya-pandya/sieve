@@ -9,7 +9,9 @@ import sys
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="sieve", description="Verifiable AI grant reviews for NEAR DAOs")
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("verify", help="re-check every on-chain review without an API key")
+    p = sub.add_parser("verify", help="re-check every on-chain review without an API key")
+    p.add_argument("--contract", help="Sieve contract (default: deployments/testnet.json)")
+    p.add_argument("--round", type=int, help="only this round")
     p = sub.add_parser("setup", help="deploy the contract, demo DAO and rounds to testnet")
     p.add_argument("--operator", required=True, help="funded testnet account with a key in ~/.near-credentials/testnet")
     p.add_argument("--name", default="sieve", help="sub-account name for the contract")
@@ -29,6 +31,10 @@ def main(argv: list[str] | None = None) -> int:
         from sieve.setup import setup
         asyncio.run(setup(args.operator, args.name, args.dao))
         return 0
+    if args.command == "verify":
+        from sieve.setup import deployment
+        from sieve.verify import verify
+        return verify(args.contract or deployment()["contract"], args.round)
     if args.command == "relay":
         from sieve.relayer import run
         from sieve.setup import deployment

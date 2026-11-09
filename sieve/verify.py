@@ -1,0 +1,112 @@
+"""Re-check every review on chain without an API key.
+
+For each review event the contract emitted, rebuild the request from the on-chain proposal and
+round (with sieve/request.py, independently of the contract), check that it matches what the
+contract asked for, check the model's ed25519 signature over request and response hashes, check
+that the key is registered for that model, and re-read the score from the signed answer.
+"""
+from __future__ import annotations
+
+import asyncio
+import base64
+import json
+
+import httpx
+from nacl.exceptions import BadSignatureError
+from nacl.signing import VerifyKey
+
+from sieve.nearai import parse_review, signed_text
+from sieve.request import build_request
+
+NEARBLOCKS = "https://api-testnet.nearblocks.io/v3"
+ARCHIVAL_RPC = "https://archival-rpc.testnet.near.org"
+RPC = "https://rpc.testnet.near.org"
+
+
+def check_review(event: dict, request: bytes, signers: dict[str, str]) -> str:
+    """'OK' or the first reason the review does not verify. `signers` maps key hex to model."""
+    if signers.get(event["public_key"]) != event["model"]:
+        return "key not registered for model"
+    response = base64.b64decode(event["response"])
+    text = signed_text(event["model"], request, response)
+    try:
+        VerifyKey(bytes.fromhex(event["public_key"])).verify(text.encode(), bytes.fromhex(event["signature"]))
+    except (BadSignatureError, ValueError):
+        return "signature does not match"
+    try:
+        score = parse_review(response).score
+    except ValueError:
+        return "signed answer is not a review"
+    if score != event["score"]:
+        return "event score differs from signed answer"
+    return "OK"
+
+
+def _rpc(url: str, method: str, params) -> dict:
+    r = httpx.post(url, json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params}, timeout=60)
+    body = r.json()
+    if "error" in body:
+        raise RuntimeError(json.dumps(body["error"])[:300])
+    return body["result"]
+
+
+def view(contract: str, method: str, args: dict | None = None):
+    res = _rpc(RPC, "query", {"request_type": "call_function", "finality": "final", "account_id": contract,
+                              "method_name": method,
+                              "args_base64": base64.b64encode(json.dumps(args or {}).encode()).decode()})
+    return json.loads(bytes(res["result"]))
+
+
+def review_transactions(contract: str) -> list[tuple[str, str]]:
+    """(tx hash, signer) of every successful post_review call, oldest first, from NearBlocks."""
+    out, cursor = [], None
+    while True:
+        params = {"limit": 100, "method": "post_review"}
+        if cursor:
+            params["cursor"] = cursor
+        d = httpx.get(f"{NEARBLOCKS}/accounts/{contract}/txns", params=params, timeout=60).json()
+        for t in d.get("data") or []:
+            if t.get("outcomes", {}).get("status") and any(a.get("method") == "post_review" for a in t.get("actions", [])):
+                out.append((t["transaction_hash"], t["signer_account_id"]))
+        cursor = (d.get("meta") or {}).get("next_page") or (d.get("meta") or {}).get("cursor")
+        if not cursor or not d.get("data"):
+            return list(reversed(out))
+
+
+def review_events(tx_hash: str, signer: str) -> list[dict]:
+    tx = _rpc(ARCHIVAL_RPC, "tx", {"tx_hash": tx_hash, "sender_account_id": signer, "wait_until": "FINAL"})
+    events = []
+    for r in tx["receipts_outcome"]:
+        for line in r["outcome"]["logs"]:
+            if line.startswith("EVENT_JSON:"):
+                e = json.loads(line[len("EVENT_JSON:"):])
+                if e.get("standard") == "sieve" and e.get("event") == "review":
+                    events.extend(e["data"])
+    return events
+
+
+def verify(contract: str, round_id: int | None = None) -> int:
+    rows, failures = [], 0
+    signers: dict[str, str] = {}
+    rounds: dict[int, dict] = {}
+    for tx_hash, signer in review_transactions(contract):
+        for e in review_events(tx_hash, signer):
+            p = view(contract, "get_proposal", {"proposal_id": e["proposal_id"]})
+            if round_id is not None and p["round_id"] != round_id:
+                continue
+            if p["round_id"] not in rounds:
+                rounds[p["round_id"]] = view(contract, "get_round", {"round_id": p["round_id"]})
+            r = rounds[p["round_id"]]
+            if e["public_key"] not in signers:
+                s = view(contract, "get_signer", {"public_key_hex": e["public_key"]})
+                signers[e["public_key"]] = s["model"] if s else ""
+            local = build_request(e["model"], r["system"], p["round_id"], e["proposal_id"], p["title"], p["body"], p["seed"])
+            onchain = base64.b64decode(view(contract, "review_request", {"proposal_id": e["proposal_id"], "slot": e["slot"]}))
+            status = "request differs from contract" if local != onchain else check_review(e, local, signers)
+            failures += status != "OK"
+            rows.append((e["proposal_id"], e["slot"], e["model"], e["score"], status, tx_hash))
+    print(f"{'proposal':>8} {'slot':>4}  {'model':<38} {'score':>5}  status")
+    for pid, slot, model, score, status, tx in rows:
+        print(f"{pid:>8} {slot:>4}  {model:<38} {score:>5}  {status}   tx {tx}")
+    print(f"\n{len(rows)} reviews checked, {failures} failed")
+    return 1 if failures or not rows else 0
