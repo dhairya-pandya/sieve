@@ -3,13 +3,13 @@ use crate::*;
 use ed25519_dalek::{Signer as _, SigningKey};
 use near_sdk::test_utils::accounts;
 
-const MODELS: [&str; 3] = ["model-a", "model-b", "model-c"];
+pub(crate) const MODELS: [&str; 3] = ["model-a", "model-b", "model-c"];
 
-fn hex(b: &[u8]) -> String {
+pub(crate) fn hex(b: &[u8]) -> String {
     b.iter().map(|x| format!("{x:02x}")).collect()
 }
 
-fn key(n: u8) -> SigningKey {
+pub(crate) fn key(n: u8) -> SigningKey {
     SigningKey::from_bytes(&[n; 32])
 }
 
@@ -26,7 +26,7 @@ fn sign(c: &Sieve, k: &SigningKey, model: &str, pid: u64, slot: u8, resp: &[u8])
 }
 
 /// Three-model round with keys 1, 2, 3 registered (expiring at 1,000,000 ms) and one proposal submitted at 2,000 ms.
-fn three_model_round() -> Sieve {
+pub(crate) fn three_model_round() -> Sieve {
     let mut c = setup_round(MODELS.iter().map(|m| m.to_string()).collect(), "rubric");
     ctx(0, 0, 1_500);
     for (i, m) in MODELS.iter().enumerate() {
@@ -37,7 +37,7 @@ fn three_model_round() -> Sieve {
     c
 }
 
-fn post(c: &mut Sieve, pid: u64, slot: u8, signer: u8, content: &str, now_ms: u64) -> u8 {
+pub(crate) fn post(c: &mut Sieve, pid: u64, slot: u8, signer: u8, content: &str, now_ms: u64) -> u8 {
     let resp = response(content);
     let sig = sign(c, &key(signer), MODELS[slot as usize], pid, slot, &resp);
     ctx(2, 0, now_ms);

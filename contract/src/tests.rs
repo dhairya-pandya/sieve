@@ -28,7 +28,7 @@ pub(crate) fn setup_round(models: Vec<String>, system: &str) -> Sieve {
     ctx(0, 0, 1_000);
     let mut c = Sieve::new(accounts(0));
     ctx(0, NEAR, 1_000);
-    c.create_round(RoundKind::Grant, accounts(3), system.to_string(), models, 7, U128(NEAR), 600_000);
+    c.create_round(RoundKind::Grant, accounts(3), system.to_string(), models, 7, U128(NEAR), U128(NEAR / 10), 600_000);
     c
 }
 

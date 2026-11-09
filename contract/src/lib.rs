@@ -1,9 +1,29 @@
 use near_sdk::json_types::{Base64VecU8, U128};
 use near_sdk::store::{LookupMap, Vector};
-use near_sdk::{env, near, require, AccountId, NearToken, PanicOnDefault, Promise};
+use near_sdk::{env, near, AccountId, Gas, NearToken, PanicOnDefault, Promise, PromiseOrValue};
+
+/// Like `require!`, but keeps the message in release builds so callers see why a call failed.
+macro_rules! ensure {
+    ($cond:expr, $msg:expr) => {
+        if !$cond {
+            near_sdk::env::panic_str(&$msg)
+        }
+    };
+}
+
+trait OrFail<T> {
+    fn or_fail(self, msg: &str) -> T;
+}
+
+impl<T> OrFail<T> for Option<T> {
+    fn or_fail(self, msg: &str) -> T {
+        self.unwrap_or_else(|| env::panic_str(msg))
+    }
+}
 
 mod request;
 mod review;
+mod finalize;
 
 pub const MAX_TITLE: usize = 200;
 pub const MAX_BODY: usize = 8_000;
@@ -33,6 +53,7 @@ pub struct Round {
     pub models: Vec<String>,
     pub threshold: u8,
     pub tranche: U128,
+    pub dao_bond: U128,
     pub window_ms: u64,
     pub bounty: U128,
     pub bonds: U128,
@@ -67,6 +88,7 @@ pub struct Proposal {
     pub submitted_ms: u64,
     pub slots: Vec<Option<Slot>>,
     pub finalized: bool,
+    pub pending: bool,
     pub outcome: Option<Outcome>,
 }
 
@@ -93,8 +115,8 @@ impl Sieve {
 
     /// Register a NEAR AI Cloud model signing key (hex ed25519) after checking its attestation off chain.
     pub fn register_signer(&mut self, public_key_hex: String, model: String, expires_ms: u64) {
-        require!(env::predecessor_account_id() == self.owner, "only the owner registers signers");
-        require!(public_key_hex.len() == 64 && public_key_hex.bytes().all(|b| b.is_ascii_hexdigit()), "key must be 32 bytes hex");
+        ensure!(env::predecessor_account_id() == self.owner, "only the owner registers signers");
+        ensure!(public_key_hex.len() == 64 && public_key_hex.bytes().all(|b| b.is_ascii_hexdigit()), "key must be 32 bytes hex");
         self.signers.insert(public_key_hex.to_ascii_lowercase(), Signer { model, expires_ms });
     }
 
@@ -108,11 +130,12 @@ impl Sieve {
         models: Vec<String>,
         threshold: u8,
         tranche: U128,
+        dao_bond: U128,
         window_ms: u64,
     ) -> u64 {
-        require!(!models.is_empty() && models.len() <= MAX_MODELS, "a round needs 1 to 5 models");
-        require!(threshold <= 10, "threshold is a score from 0 to 10");
-        require!(window_ms > 0, "window must be positive");
+        ensure!(!models.is_empty() && models.len() <= MAX_MODELS, "a round needs 1 to 5 models");
+        ensure!(threshold <= 10, "threshold is a score from 0 to 10");
+        ensure!(window_ms > 0, "window must be positive");
         let deposit = U128(env::attached_deposit().as_yoctonear());
         let (bounty, bonds) = match kind {
             RoundKind::Honeypot => (deposit, U128(0)),
@@ -126,6 +149,7 @@ impl Sieve {
             models,
             threshold,
             tranche,
+            dao_bond,
             window_ms,
             bounty,
             bonds,
@@ -137,10 +161,10 @@ impl Sieve {
     /// Submit a proposal. The attached deposit must cover its storage; any excess is refunded.
     #[payable]
     pub fn submit(&mut self, round_id: u64, title: String, body: String) -> u64 {
-        require!(title.len() <= MAX_TITLE, "title too long");
-        require!(body.len() <= MAX_BODY, "body too long");
-        let round = self.rounds.get(round_id as u32).expect("no such round");
-        require!(round.open, "round is closed");
+        ensure!(title.len() <= MAX_TITLE, "title too long");
+        ensure!(body.len() <= MAX_BODY, "body too long");
+        let round = self.rounds.get(round_id as u32).or_fail("no such round");
+        ensure!(round.open, "round is closed");
         let slots = vec![None; round.models.len()];
         let seed_bytes: [u8; 4] = env::random_seed()[..4].try_into().unwrap();
         let before = env::storage_usage();
@@ -153,12 +177,13 @@ impl Sieve {
             submitted_ms: env::block_timestamp_ms(),
             slots,
             finalized: false,
+            pending: false,
             outcome: None,
         });
         self.proposals.flush();
         let cost = env::storage_byte_cost().saturating_mul((env::storage_usage() - before) as u128);
         let attached = env::attached_deposit();
-        require!(attached >= cost, format!("storage deposit of {} yoctoNEAR required", cost.as_yoctonear()));
+        ensure!(attached >= cost, format!("storage deposit of {} yoctoNEAR required", cost.as_yoctonear()));
         let refund = attached.saturating_sub(cost);
         if refund > NearToken::from_yoctonear(0) {
             let _ = Promise::new(env::predecessor_account_id()).transfer(refund);
@@ -170,21 +195,21 @@ impl Sieve {
     /// Within the window the lowest valid score for a slot wins. Returns the slot's score after this review.
     pub fn post_review(&mut self, proposal_id: u64, slot: u8, response: Base64VecU8, signature_hex: String, public_key_hex: String) -> u8 {
         let response: Vec<u8> = response.into();
-        require!(response.len() <= review::MAX_RESPONSE, "response too large");
-        let p = self.proposals.get(proposal_id as u32).expect("no such proposal").clone();
-        let round = self.rounds.get(p.round_id as u32).expect("no such round").clone();
-        let model = round.models.get(slot as usize).expect("no such slot").clone();
+        ensure!(response.len() <= review::MAX_RESPONSE, "response too large");
+        let p = self.proposals.get(proposal_id as u32).or_fail("no such proposal").clone();
+        let round = self.rounds.get(p.round_id as u32).or_fail("no such round").clone();
+        let model = round.models.get(slot as usize).or_fail("no such slot").clone();
         let now = env::block_timestamp_ms();
-        require!(now <= p.submitted_ms + round.window_ms, "review window closed");
+        ensure!(now <= p.submitted_ms + round.window_ms, "review window closed");
         let pk_hex = public_key_hex.to_ascii_lowercase();
-        let signer = self.signers.get(&pk_hex).filter(|s| s.model == model).expect("key is not registered for this model");
-        require!(now < signer.expires_ms, "signer key expired");
+        let signer = self.signers.get(&pk_hex).filter(|s| s.model == model).or_fail("key is not registered for this model");
+        ensure!(now < signer.expires_ms, "signer key expired");
         let request = self.request_bytes(proposal_id, slot);
         let response_hash = review::hex(&env::sha256(&response));
         let text = format!("{model}:{}:{response_hash}", review::hex(&env::sha256(&request)));
-        let sig = review::unhex::<64>(&signature_hex.to_ascii_lowercase()).expect("bad signature");
-        let pk = review::unhex::<32>(&pk_hex).expect("bad public key");
-        require!(env::ed25519_verify(&sig, text.as_bytes(), &pk), "bad signature");
+        let sig = review::unhex::<64>(&signature_hex.to_ascii_lowercase()).or_fail("bad signature");
+        let pk = review::unhex::<32>(&pk_hex).or_fail("bad public key");
+        ensure!(env::ed25519_verify(&sig, text.as_bytes(), &pk), "bad signature");
         let parsed = review::parse(&response).unwrap_or_else(|e| env::panic_str(e));
         let entry = &mut self.proposals.get_mut(proposal_id as u32).unwrap().slots[slot as usize];
         if entry.as_ref().map_or(true, |s| parsed.score < s.score) {
@@ -201,6 +226,79 @@ impl Sieve {
         });
         env::log_str(&format!("EVENT_JSON:{event}"));
         kept
+    }
+
+    /// Settle a proposal once its review window has closed. A passing grant proposal files a Transfer
+    /// proposal for the first tranche on the round's Sputnik DAO; a passing honeypot proposal wins the bounty.
+    pub fn finalize(&mut self, proposal_id: u64) -> PromiseOrValue<Outcome> {
+        let p = self.proposals.get(proposal_id as u32).or_fail("no such proposal").clone();
+        ensure!(!p.finalized, "already finalized");
+        ensure!(!p.pending, "DAO filing in progress");
+        let round = self.rounds.get(p.round_id as u32).or_fail("no such round").clone();
+        ensure!(env::block_timestamp_ms() > p.submitted_ms + round.window_ms, "review window still open");
+        let (median, filled) = finalize::median(&p.slots).unwrap_or((0, 0));
+        ensure!(filled >= round.models.len().min(2), "needs at least 2 reviews");
+        let passed = median >= round.threshold && !finalize::flagged_injection(&p.slots);
+        let mut outcome = Outcome { median, passed, dao_proposal_id: None, paid: None };
+        match (passed, &round.kind) {
+            (true, RoundKind::Honeypot) if round.bounty.0 > 0 => {
+                outcome.paid = Some(round.bounty);
+                let r = self.rounds.get_mut(p.round_id as u32).unwrap();
+                r.bounty = U128(0);
+                r.open = false;
+                let _ = Promise::new(p.author.clone()).transfer(NearToken::from_yoctonear(round.bounty.0));
+            }
+            (true, RoundKind::Grant) => {
+                ensure!(round.bonds.0 >= round.dao_bond.0, "round has no bonds left for DAO proposals");
+                self.rounds.get_mut(p.round_id as u32).unwrap().bonds = U128(round.bonds.0 - round.dao_bond.0);
+                let prop = self.proposals.get_mut(proposal_id as u32).unwrap();
+                prop.pending = true;
+                prop.outcome = Some(outcome);
+                let args = near_sdk::serde_json::json!({"proposal": {
+                    "description": format!("Sieve round {} proposal {}: {}", p.round_id, proposal_id, p.title),
+                    "kind": {"Transfer": {"token_id": "", "receiver_id": p.author, "amount": round.tranche}},
+                }});
+                return PromiseOrValue::Promise(
+                    Promise::new(round.dao.clone())
+                        .function_call("add_proposal".to_string(), args.to_string().into_bytes(),
+                            NearToken::from_yoctonear(round.dao_bond.0), Gas::from_tgas(30))
+                        .then(Promise::new(env::current_account_id()).function_call(
+                            "on_dao_proposal".to_string(),
+                            near_sdk::serde_json::json!({"proposal_id": proposal_id}).to_string().into_bytes(),
+                            NearToken::from_yoctonear(0), Gas::from_tgas(15))),
+                );
+            }
+            _ => {}
+        }
+        let prop = self.proposals.get_mut(proposal_id as u32).unwrap();
+        prop.finalized = true;
+        prop.outcome = Some(outcome.clone());
+        PromiseOrValue::Value(outcome)
+    }
+
+    /// Result of the DAO's add_proposal. On failure the bond (refunded by the runtime) goes back to the round.
+    #[private]
+    pub fn on_dao_proposal(&mut self, proposal_id: u64) -> Outcome {
+        let id = env::promise_result_checked(0, 64)
+            .ok()
+            .and_then(|v| near_sdk::serde_json::from_slice::<u64>(&v).ok());
+        let round_id = self.proposals.get(proposal_id as u32).or_fail("no such proposal").round_id;
+        let p = self.proposals.get_mut(proposal_id as u32).unwrap();
+        p.pending = false;
+        let mut outcome = p.outcome.clone().or_fail("outcome set before filing");
+        match id {
+            Some(id) => {
+                p.finalized = true;
+                outcome.dao_proposal_id = Some(id);
+                p.outcome = Some(outcome.clone());
+            }
+            None => {
+                p.outcome = None;
+                let r = self.rounds.get_mut(round_id as u32).unwrap();
+                r.bonds = U128(r.bonds.0 + r.dao_bond.0);
+            }
+        }
+        outcome
     }
 
     /// The exact request bytes a reviewer must send to NEAR AI Cloud for this proposal and slot.
@@ -237,9 +335,9 @@ impl Sieve {
 
 impl Sieve {
     fn request_bytes(&self, proposal_id: u64, slot: u8) -> Vec<u8> {
-        let p = self.proposals.get(proposal_id as u32).expect("no such proposal");
-        let round = self.rounds.get(p.round_id as u32).expect("no such round");
-        let model = round.models.get(slot as usize).expect("no such slot");
+        let p = self.proposals.get(proposal_id as u32).or_fail("no such proposal");
+        let round = self.rounds.get(p.round_id as u32).or_fail("no such round");
+        let model = round.models.get(slot as usize).or_fail("no such slot");
         request::build(model, &round.system, p.round_id, proposal_id, &p.title, &p.body, p.seed)
     }
 
@@ -253,3 +351,5 @@ impl Sieve {
 mod tests;
 #[cfg(test)]
 mod review_tests;
+#[cfg(test)]
+mod finalize_tests;
