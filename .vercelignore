@@ -1,0 +1,8 @@
+.venv
+contract
+tests
+docs
+.superpowers
+skills
+results/redteam/*.jsonl
+*.egg-info

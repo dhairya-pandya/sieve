@@ -9,3 +9,5 @@ target/
 node_modules/
 *.egg-info/
 docs/
+.vercel
+.env*

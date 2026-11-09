@@ -135,5 +135,6 @@ def create_app(chain: Chain, signals: Callable[[int, list], dict] = live_signals
 
 
 def main() -> FastAPI:
-    from sieve.setup import deployment
-    return create_app(LiveChain(os.environ.get("SIEVE_CONTRACT") or deployment()["contract"]))
+    import json
+    deployed = Path(__file__).resolve().parents[1] / "deployments" / "testnet.json"
+    return create_app(LiveChain(os.environ.get("SIEVE_CONTRACT") or json.loads(deployed.read_text())["contract"]))

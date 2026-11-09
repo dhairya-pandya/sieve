@@ -1,0 +1,17 @@
+{
+  "framework": null,
+  "buildCommand": "",
+  "outputDirectory": "web",
+  "functions": {
+    "api/index.py": {
+      "maxDuration": 60,
+      "includeFiles": "{sieve/**,deployments/**,results/redteam/REPORT.md}"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/index.py"
+    }
+  ]
+}
