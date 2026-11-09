@@ -28,6 +28,9 @@
 | DAO call fails | The bond is returned to the round and `finalize` can be retried; nothing is marked final |
 | One signature filling two slots | A round's models must be distinct; each slot's request names its model |
 | Review data draining the contract | Storage for every review slot is reserved and paid at submit; only known flags are stored |
+| Padding a proposal with plausible detail to stretch the score | The rubric is ten yes/no checks and the contract counts the "yes" answers itself, so each check is worth one point however much text supports it |
+| Fake track record ("our last grant reached 5,000 users") | The applicant's record (first seen, earlier proposals, passed, milestones delivered) is written into every request by the contract; the rubric tells the model to give in-proposal claims about the past no weight, and the track-record check can only be ticked from the contract's record |
+| A proposal that only looks good on paper | Newcomers get a small first tranche; each later tranche needs delivery evidence that passes its own three-model review, opened only after the contract confirms with the DAO that members approved the previous payout |
 | Double payout | `finalize` runs once per proposal; the honeypot round closes when its bounty is paid |
 
 ## What is checked off chain, and by whom
@@ -41,6 +44,7 @@
 - A `provider_tee` signature is not bound to the gateway's TLS evidence (NEAR AI Cloud documents this as well).
 - TEEs do not resist physical attacks. Published attacks such as TEE.fail (2025) forge attestations with hardware access to the server.
 - The contract trusts the owner to register the right keys. Key registration is public, and anyone can audit it with `sieve attest`.
+- Delivery evidence is judged as text. The models cannot open links, so evidence is checked for being specific and checkable (commit hashes, contract accounts, transaction ids) and DAO members check it before voting. Making milestones on-chain predicates the contract checks itself (a code hash, a call count) is the next step.
 - Prompt injection is reduced, not solved. `results/redteam/REPORT.md` reports measured rates, including the deployed three-model median.
 - Duplicate and sybil signals are advisory and can be gamed. NEAR accounts are cheap to create.
 - The attestation check compares the key binding, nonces and Intel's signature on the TDX quote, but not the enclave's measurements (MRTD, RTMR, compose hash) against a published reference, and it checks only that the NVIDIA GPU evidence echoes our nonce. Any genuine TDX machine that binds the key would pass. Registration refuses keys whose Intel quote could not be verified.
