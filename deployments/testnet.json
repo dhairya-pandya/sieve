@@ -1,6 +1,6 @@
 {
   "network": "testnet",
-  "contract": "sieve-v3.redswarm-dhairya.testnet",
+  "contract": "sieve-v4.redswarm-dhairya.testnet",
   "operator": "redswarm-dhairya.testnet",
   "dao": "sieve-demo.sputnikv2.testnet",
   "rounds": {

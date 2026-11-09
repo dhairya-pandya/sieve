@@ -30,7 +30,7 @@ def test_skips_unparseable_review():
 
 
 def test_skips_oversize_response():
-    big = json.dumps({"id": "c1", "choices": [{"message": {"content": '{"score":1}', "reasoning_content": "x" * 9000}}]}).encode()
+    big = json.dumps({"id": "c1", "choices": [{"message": {"content": '{"score":1}', "reasoning_content": "x" * 64_000}}]}).encode()
     assert review_slot(REQ, "m", complete=lambda r: (big, "c1"), fetch=lambda cid: _sig(resp=big)) is None
 
 

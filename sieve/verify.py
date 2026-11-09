@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import os
 import json
 
@@ -26,6 +27,8 @@ RPC = os.environ.get("SIEVE_RPC", "https://rpc.testnet.fastnear.com")
 
 def check_review(event: dict, request: bytes, signers: dict[str, str]) -> str:
     """'OK' or the first reason the review does not verify. `signers` maps key hex to model."""
+    if not event.get("response"):
+        return "answer missing from the transaction"
     if signers.get(event["public_key"]) != event["model"]:
         return "key not registered for model"
     response = base64.b64decode(event["response"])
@@ -88,16 +91,37 @@ def review_transactions(contract: str) -> list[tuple[str, str]]:
             return list(reversed(out))
 
 
-def review_events(tx_hash: str, signer: str) -> list[dict]:
-    tx = _rpc(ARCHIVAL_RPC, "tx", {"tx_hash": tx_hash, "sender_account_id": signer, "wait_until": "FINAL"})
+def events_from_tx(tx: dict) -> list[dict]:
+    """Review events of one transaction, each with the answer bytes (base64) under "response".
+
+    Newer contracts log only the answer's hash; the answer is taken from the post_review call's own
+    arguments and kept only if it matches the logged hash (else "response" is None). Older ones logged it.
+    """
+    args = []
+    for action in tx["transaction"]["actions"]:
+        call = action.get("FunctionCall") if isinstance(action, dict) else None
+        if call and call.get("method_name") == "post_review":
+            args.append(json.loads(base64.b64decode(call["args"])))
     events = []
     for r in tx["receipts_outcome"]:
         for line in r["outcome"]["logs"]:
-            if line.startswith("EVENT_JSON:"):
-                e = json.loads(line[len("EVENT_JSON:"):])
-                if e.get("standard") == "sieve" and e.get("event") == "review":
-                    events.extend(e["data"])
+            if not line.startswith("EVENT_JSON:"):
+                continue
+            e = json.loads(line[len("EVENT_JSON:"):])
+            if e.get("standard") != "sieve" or e.get("event") != "review":
+                continue
+            for d in e["data"]:
+                if "response_hash" in d and "response" not in d:
+                    match = next((a["response"] for a in args if a.get("proposal_id") == d["proposal_id"]
+                                  and a.get("slot") == d["slot"]
+                                  and hashlib.sha256(base64.b64decode(a["response"])).hexdigest() == d["response_hash"]), None)
+                    d = dict(d, response=match)
+                events.append(d)
     return events
+
+
+def review_events(tx_hash: str, signer: str) -> list[dict]:
+    return events_from_tx(_rpc(ARCHIVAL_RPC, "tx", {"tx_hash": tx_hash, "sender_account_id": signer, "wait_until": "FINAL"}))
 
 
 def verify(contract: str, round_id: int | None = None) -> int:

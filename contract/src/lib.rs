@@ -322,7 +322,8 @@ impl Sieve {
             "data": [{
                 "proposal_id": proposal_id, "stage": p.stage, "slot": slot, "model": model, "score": parsed.score,
                 "flags": parsed.flags, "public_key": pk_hex, "signature": signature_hex.to_ascii_lowercase(),
-                "response": near_sdk::base64::Engine::encode(&near_sdk::base64::engine::general_purpose::STANDARD, &response),
+                // The answer itself is in this transaction's arguments; the log carries its hash.
+                "response_hash": review::hex(&env::sha256(&response)),
             }]
         });
         env::log_str(&format!("EVENT_JSON:{event}"));

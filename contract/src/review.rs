@@ -2,7 +2,7 @@
 //! The parsing rules match sieve/nearai.py::parse_review.
 use near_sdk::serde_json::{self, Value};
 
-pub const MAX_RESPONSE: usize = 9_000;
+pub const MAX_RESPONSE: usize = 64_000;
 
 pub struct Parsed {
     pub score: u8,

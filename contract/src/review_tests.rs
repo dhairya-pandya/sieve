@@ -176,7 +176,7 @@ fn rejects_prose() {
 #[should_panic(expected = "response too large")]
 fn rejects_oversize_response() {
     let mut c = three_model_round();
-    let content = format!(r#"{{"score":1,"flags":[],"reason":"{}"}}"#, "x".repeat(9_000));
+    let content = format!(r#"{{"score":1,"flags":[],"reason":"{}"}}"#, "x".repeat(64_000));
     post(&mut c, 0, 0, 1, &content, 3_000);
 }
 
@@ -190,7 +190,8 @@ fn review_emits_event_with_response() {
     assert_eq!(v["event"], "review");
     let d = &v["data"][0];
     assert_eq!((d["proposal_id"].as_u64(), d["slot"].as_u64(), d["score"].as_u64()), (Some(0), Some(2), Some(6)));
-    assert_eq!(b64(d["response"].as_str().unwrap()), response(r#"{"score":6,"flags":[]}"#));
+    assert!(d.get("response").is_none(), "the answer stays in the transaction arguments, not the log");
+    assert_eq!(d["response_hash"].as_str().unwrap(), hex(&env::sha256(&response(r#"{"score":6,"flags":[]}"#))));
     let _ = accounts(0);
 }
 
@@ -214,4 +215,15 @@ fn checklist_rejects_more_than_ten() {
     let mut c = three_model_round();
     let checks: Vec<String> = (0..11).map(|i| format!("\"c{i}\":true")).collect();
     post(&mut c, 0, 0, 1, &format!("{{\"checks\":{{{}}},\"flags\":[]}}", checks.join(",")), 3_000);
+}
+
+#[test]
+fn accepts_long_reasoning_answer() {
+    let mut c = three_model_round();
+    let content = r#"{"score":5,"flags":[]}"#;
+    let long = near_sdk::serde_json::json!({"id": "x", "choices": [{"message": {"role": "assistant", "content": content,
+        "reasoning_content": "r".repeat(20_000)}}]}).to_string().into_bytes();
+    let sig = sign(&c, &key(1), MODELS[0], 0, 0, &long);
+    ctx(2, 0, 3_000);
+    assert_eq!(c.post_review(0, 0, long.into(), sig, hex(key(1).verifying_key().as_bytes())), 5);
 }

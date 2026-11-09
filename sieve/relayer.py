@@ -14,7 +14,7 @@ from typing import Callable
 from sieve import nearai
 from sieve.near import Near
 
-MAX_RESPONSE = 9_000
+MAX_RESPONSE = 64_000
 PAGE = 50
 
 
