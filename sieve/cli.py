@@ -15,6 +15,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--name", default="sieve", help="sub-account name for the contract")
     p.add_argument("--dao", default="sieve-demo", help="Sputnik DAO name")
     sub.add_parser("attest", help="check the TEE attestation of every review model")
+    p = sub.add_parser("relay", help="review open proposals with NEAR AI Cloud and post signed results")
+    p.add_argument("--operator", required=True, help="testnet account that pays gas, key in ~/.near-credentials/testnet")
+    p.add_argument("--contract", help="Sieve contract (default: deployments/testnet.json)")
+    p.add_argument("--once", action="store_true", help="one pass, then exit")
+    p.add_argument("--interval", type=float, default=15.0, help="seconds between passes")
     return parser
 
 
@@ -23,6 +28,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "setup":
         from sieve.setup import setup
         asyncio.run(setup(args.operator, args.name, args.dao))
+        return 0
+    if args.command == "relay":
+        from sieve.relayer import run
+        from sieve.setup import deployment
+        asyncio.run(run(args.operator, args.contract or deployment()["contract"], args.once, args.interval))
         return 0
     if args.command == "attest":
         from sieve.attest import model_signers
