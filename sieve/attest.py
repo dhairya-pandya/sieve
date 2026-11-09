@@ -82,12 +82,15 @@ def check_model_report(report: dict, model: str, nonce: str, verify_quote: bool 
     return key, checks
 
 
-def model_signers(models: list[str] | tuple[str, ...]) -> dict[str, str]:
-    """Fresh attestation for each model; prints every check and returns {model: signing key hex}."""
+def model_signers(models: list[str] | tuple[str, ...], require_all: bool = True) -> dict[str, str]:
+    """Fresh attestation for each model; prints every check and returns {model: signing key hex}.
+    With `require_all`, a check that could not run (UNVERIFIED) is a failure, not a pass."""
     keys = {}
     for model in models:
         nonce = secrets.token_hex(32)
         key, checks = check_model_report(fetch_report(model, nonce), model, nonce)
         print(f"{model}: key {key[:16]}...  " + "  ".join(f"{n}={s}" for n, s in checks))
+        if require_all and any(status != "OK" for _, status in checks):
+            raise AttestationError(f"{model}: attestation not fully verified; rerun when the Intel collateral service is reachable")
         keys[model] = key
     return keys

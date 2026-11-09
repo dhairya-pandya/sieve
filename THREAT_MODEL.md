@@ -22,10 +22,12 @@
 | Operator or relayer changes the rubric or prompt | The contract builds the request from the round's stored prompt and the stored proposal, then checks the signature over its hash |
 | Forged or edited score | The signature covers the hash of the exact response bytes; the contract parses the score from them |
 | Signed answer reused on another proposal, round or slot | Round id, proposal id, model and a contract-chosen seed are inside the signed request |
-| Applicant resamples until a model gives a high score | For the review window (one hour in the current rounds) any relayer may post a lower signed score for the same slot, and the lowest wins; an honest relayer always posts |
+| Applicant resamples until a model gives a high score | For the review window (one hour in the current rounds) any relayer may post a lower signed score for the same slot, and the lowest wins. The project's relayer re-reviews every slot holding a passing score on each pass and posts its own score when it is lower |
 | One model is fooled | The median of three different models decides; any `injection` flag blocks a pass |
 | Unregistered or stale model key | Keys are registered per model with an expiry; the contract rejects others |
 | DAO call fails | The bond is returned to the round and `finalize` can be retried; nothing is marked final |
+| One signature filling two slots | A round's models must be distinct; each slot's request names its model |
+| Review data draining the contract | Storage for every review slot is reserved and paid at submit; only known flags are stored |
 | Double payout | `finalize` runs once per proposal; the honeypot round closes when its bounty is paid |
 
 ## What is checked off chain, and by whom
@@ -41,4 +43,6 @@
 - The contract trusts the owner to register the right keys. Key registration is public, and anyone can audit it with `sieve attest`.
 - Prompt injection is reduced, not solved. `results/redteam/REPORT.md` reports measured rates, including the deployed three-model median.
 - Duplicate and sybil signals are advisory and can be gamed. NEAR accounts are cheap to create.
+- The attestation check compares the key binding, nonces and Intel's signature on the TDX quote, but not the enclave's measurements (MRTD, RTMR, compose hash) against a published reference, and it checks only that the NVIDIA GPU evidence echoes our nonce. Any genuine TDX machine that binds the key would pass. Registration refuses keys whose Intel quote could not be verified.
+- An applicant can try the reverse of cherry-picking: posting a low signed score or an `injection` flag on a rival's good proposal. That is possible only if a model really gave that answer to the pinned request, and lowest-wins accepts it by design. Reviews are public, so members voting can see it.
 - If no honest relayer runs during a review window, a resampled score stands. The project's own relayer runs every ten minutes, and the current rounds' window is one hour.

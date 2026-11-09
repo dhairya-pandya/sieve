@@ -34,3 +34,13 @@ def test_rejects_key_not_bound_in_quote():
     bad["model_attestations"][0]["signing_address"] = "ab" * 32
     with pytest.raises(AttestationError, match="quote"):
         check_model_report(bad, "Qwen/Qwen3.8-27B", NONCE, verify_quote=False)
+
+
+def test_model_signers_refuses_unverified_quote(monkeypatch):
+    import sieve.attest as a
+    monkeypatch.setattr(a.secrets, "token_hex", lambda n: NONCE)
+    monkeypatch.setattr(a, "fetch_report", lambda model, nonce: REPORT)
+    monkeypatch.setattr(a, "_quote_status", lambda quote: "UNVERIFIED")
+    with pytest.raises(AttestationError, match="not fully verified"):
+        a.model_signers(["Qwen/Qwen3.8-27B"])
+    assert a.model_signers(["Qwen/Qwen3.8-27B"], require_all=False) == {"Qwen/Qwen3.8-27B": KEY}

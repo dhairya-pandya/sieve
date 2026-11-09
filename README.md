@@ -17,11 +17,11 @@ Communities that fund work are flooded with AI-written applications: grant volum
 2. An applicant submits a proposal on chain.
 3. A relayer sends the proposal to three models in NEAR AI Cloud (`Qwen/Qwen3.8-27B`, `z-ai/glm-5.3-flash`, `deepseek-ai/DeepSeek-V4.1-Flash-1017`). Each model signs `model:sha256(request):sha256(response)` with an ed25519 key held inside its enclave. Anyone can run a relayer; the contract trusts only the model keys.
 4. The contract builds the request itself from the stored rubric and proposal, hashes it, checks the signature with a key registered for that model, and parses the score from the signed answer. The request includes the round and proposal ids, `temperature: 0`, and a seed the contract picked, so a signed answer cannot be reused for another proposal.
-5. For an hour anyone may post another signed review for the same slot, and the lowest valid score wins. An applicant who asks the model many times and posts only a lucky high score is overruled by any honest relayer.
+5. For an hour anyone may post another signed review for the same slot, and the lowest valid score wins. An applicant who asks the model many times and posts only a lucky high score is overruled: the project's relayer re-reviews every slot holding a passing score and posts its own lower score.
 6. After the window, the median of the three scores decides. If it reaches the threshold and no model flagged `injection`, the contract calls the DAO's `add_proposal` with a Transfer of the first tranche to the applicant. DAO members vote as usual.
 7. A honeypot round holds a bounty. Every proposal in it is worthless by definition, so the honest score is 0. If any proposal still passes, the contract pays the bounty to its author in the same call. That keeps an open, paid invitation to break the reviewer.
 
-Model signing keys are registered only after checking each model's attestation: the report must echo our fresh nonce, the Intel TDX quote's report data must bind the signing key to that nonce, the NVIDIA GPU evidence must echo it too, and the quote's Intel signature is checked with `dcap-qvl`.
+Model signing keys are registered only after checking each model's attestation: the report must echo our fresh nonce, the Intel TDX quote's report data must bind the signing key to that nonce, the NVIDIA GPU evidence must echo it too, and the quote's Intel signature must verify with `dcap-qvl`; setup refuses to register a key otherwise. Enclave measurements are not yet compared with a published reference (see the threat model).
 
 ## Try it
 

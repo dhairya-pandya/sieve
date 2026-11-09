@@ -28,6 +28,10 @@ mod finalize;
 pub const MAX_TITLE: usize = 200;
 pub const MAX_BODY: usize = 8_000;
 pub const MAX_MODELS: usize = 5;
+/// Storage reserved per review slot at submit time, so reviews never spend the contract's own balance.
+pub const SLOT_RESERVE_BYTES: u64 = 300;
+/// Only these flags are stored; anything else a model emits is ignored.
+pub const KNOWN_FLAGS: [&str; 4] = ["injection", "duplicate", "off_topic", "low_effort"];
 
 #[near(serializers = [borsh, json])]
 #[derive(Clone, Debug, PartialEq)]
@@ -135,6 +139,10 @@ impl Sieve {
     ) -> u64 {
         ensure!(!models.is_empty() && models.len() <= MAX_MODELS, "a round needs 1 to 5 models");
         ensure!(threshold <= 10, "threshold is a score from 0 to 10");
+        let mut distinct = models.clone();
+        distinct.sort();
+        distinct.dedup();
+        ensure!(distinct.len() == models.len(), "models must be distinct");
         ensure!(window_ms > 0, "window must be positive");
         let deposit = U128(env::attached_deposit().as_yoctonear());
         let (bounty, bonds) = match kind {
@@ -181,7 +189,8 @@ impl Sieve {
             outcome: None,
         });
         self.proposals.flush();
-        let cost = env::storage_byte_cost().saturating_mul((env::storage_usage() - before) as u128);
+        let reserved = SLOT_RESERVE_BYTES * round.models.len() as u64;
+        let cost = env::storage_byte_cost().saturating_mul((env::storage_usage() - before + reserved) as u128);
         let attached = env::attached_deposit();
         ensure!(attached >= cost, format!("storage deposit of {} yoctoNEAR required", cost.as_yoctonear()));
         let refund = attached.saturating_sub(cost);
@@ -210,7 +219,14 @@ impl Sieve {
         let sig = review::unhex::<64>(&signature_hex.to_ascii_lowercase()).or_fail("bad signature");
         let pk = review::unhex::<32>(&pk_hex).or_fail("bad public key");
         ensure!(env::ed25519_verify(&sig, text.as_bytes(), &pk), "bad signature");
-        let parsed = review::parse(&response).unwrap_or_else(|e| env::panic_str(e));
+        let mut parsed = review::parse(&response).unwrap_or_else(|e| env::panic_str(e));
+        let mut kept_flags: Vec<String> = Vec::new();
+        for f in parsed.flags.iter().filter(|f| KNOWN_FLAGS.contains(&f.as_str())) {
+            if !kept_flags.contains(f) {
+                kept_flags.push(f.clone());
+            }
+        }
+        parsed.flags = kept_flags;
         let entry = &mut self.proposals.get_mut(proposal_id as u32).unwrap().slots[slot as usize];
         if entry.as_ref().map_or(true, |s| parsed.score < s.score) {
             *entry = Some(Slot { score: parsed.score, flags: parsed.flags.clone(), response_hash });
@@ -226,6 +242,34 @@ impl Sieve {
         });
         env::log_str(&format!("EVENT_JSON:{event}"));
         kept
+    }
+
+    /// Add to a round's DAO proposal bonds (grant round) or bounty (honeypot round).
+    #[payable]
+    pub fn fund_round(&mut self, round_id: u64) {
+        let amount = env::attached_deposit().as_yoctonear();
+        let r = self.rounds.get_mut(round_id as u32).or_fail("no such round");
+        ensure!(r.open, "round is closed");
+        match r.kind {
+            RoundKind::Honeypot => r.bounty = U128(r.bounty.0 + amount),
+            RoundKind::Grant => r.bonds = U128(r.bonds.0 + amount),
+        }
+    }
+
+    /// Close a round and return its unspent bounty and bonds to the creator. Proposals already
+    /// submitted can still be reviewed and finalized; passing ones file to the DAO only while bonds remain.
+    pub fn close_round(&mut self, round_id: u64) -> U128 {
+        let r = self.rounds.get_mut(round_id as u32).or_fail("no such round");
+        ensure!(env::predecessor_account_id() == r.creator, "only the round creator can close it");
+        ensure!(r.open, "round is closed");
+        let refund = r.bounty.0 + r.bonds.0;
+        r.open = false;
+        r.bounty = U128(0);
+        r.bonds = U128(0);
+        if refund > 0 {
+            let _ = Promise::new(r.creator.clone()).transfer(NearToken::from_yoctonear(refund));
+        }
+        U128(refund)
     }
 
     /// Settle a proposal once its review window has closed. A passing grant proposal files a Transfer
@@ -295,7 +339,11 @@ impl Sieve {
             None => {
                 p.outcome = None;
                 let r = self.rounds.get_mut(round_id as u32).unwrap();
-                r.bonds = U128(r.bonds.0 + r.dao_bond.0);
+                if r.open {
+                    r.bonds = U128(r.bonds.0 + r.dao_bond.0);
+                } else if r.dao_bond.0 > 0 {
+                    let _ = Promise::new(r.creator.clone()).transfer(NearToken::from_yoctonear(r.dao_bond.0));
+                }
             }
         }
         outcome
@@ -353,3 +401,5 @@ mod tests;
 mod review_tests;
 #[cfg(test)]
 mod finalize_tests;
+#[cfg(test)]
+mod fix_tests;

@@ -16,6 +16,22 @@ async function get(path) {
   return r.json();
 }
 
+// Read the contract directly from a NEAR RPC node, so the browser check does not rely on the API.
+async function rpcView(method, args) {
+  const r = await fetch(window.SIEVE_RPC, { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "query", params: { request_type: "call_function", finality: "final",
+      account_id: config.contract, method_name: method, args_base64: btoa(JSON.stringify(args)) } }) });
+  const body = await r.json();
+  if (body.error || !body.result) throw new Error("RPC: " + JSON.stringify(body.error || body).slice(0, 120));
+  return JSON.parse(new TextDecoder().decode(Uint8Array.from(body.result.result)));
+}
+
+function signedReview(responseB64) {
+  const content = JSON.parse(new TextDecoder().decode(b64(responseB64))).choices[0].message.content.trim()
+    .replace(/^```[a-zA-Z]*\n?/, "").replace(/```$/, "");
+  return JSON.parse(content);
+}
+
 // The canonical request, byte for byte as sieve/request.py and the contract build it.
 function buildRequest(model, system, roundId, proposalId, title, body, seed) {
   const user = `Round ${roundId}, proposal ${proposalId}.\n<proposal>\nTITLE: ${title}\n\n${body}\n</proposal>`;
@@ -23,12 +39,21 @@ function buildRequest(model, system, roundId, proposalId, title, body, seed) {
     `{"role":"user","content":${JSON.stringify(user)}}],"temperature":0,"seed":${seed},"response_format":{"type":"json_object"}}`;
 }
 
-// Re-check one review here, without trusting the API: rebuild the request from the proposal and the
-// round's rubric, hash both, and check the model's ed25519 signature over "model:reqhash:resphash".
-async function checkInBrowser(review, proposal, round, proposalId) {
+// Re-check one review here without trusting the API: the proposal, round and key registration come from a
+// NEAR RPC node; the request is rebuilt from them; the model's ed25519 signature over "model:reqhash:resphash"
+// is checked; and the score is read from the signed answer itself. Only the signed answer comes from the API.
+async function checkInBrowser(review, proposalId) {
+  const [proposal, signer] = await Promise.all([
+    rpcView("get_proposal", { proposal_id: proposalId }),
+    rpcView("get_signer", { public_key_hex: review.public_key }),
+  ]);
+  const round = await rpcView("get_round", { round_id: proposal.round_id });
+  if (!signer || signer.model !== review.model) return { ok: false, why: "key is not registered on chain for this model" };
+  if (round.models[review.slot] !== review.model) return { ok: false, why: "model does not match the round's slot" };
   const local = buildRequest(review.model, round.system, proposal.round_id, proposalId, proposal.title, proposal.body, proposal.seed);
-  const served = new TextDecoder().decode(b64(review.request));
-  if (local !== served) return { ok: false, why: "request does not match the on-chain rubric and proposal" };
+  let signedScore;
+  try { signedScore = signedReview(review.response).score; } catch { return { ok: false, why: "signed answer is not a review" }; }
+  if (signedScore !== review.score) return { ok: false, why: "shown score differs from the signed answer" };
   const reqHash = hex(await crypto.subtle.digest("SHA-256", enc.encode(local)));
   const respHash = hex(await crypto.subtle.digest("SHA-256", b64(review.response)));
   const text = `${review.model}:${reqHash}:${respHash}`;
@@ -51,6 +76,7 @@ function strip(scores, threshold) {
 function status(p) {
   if (p.finalized && p.outcome) {
     if (p.outcome.paid) return `<span class="status-pass">Won the honeypot bounty</span>`;
+    if (p.outcome.passed && p.outcome.dao_proposal_id == null) return `<span class="status-pass">Passed, but the bounty was already claimed</span>`;
     if (p.outcome.passed) return `<span class="status-pass">Passed, sent to the DAO vote${p.outcome.dao_proposal_id != null ? ` (DAO proposal ${p.outcome.dao_proposal_id})` : ""}</span>`;
     return `<span class="status-fail">Did not pass (median ${p.outcome.median})</span>`;
   }
@@ -85,7 +111,7 @@ async function round(id) {
   app.innerHTML = `
     <p class="small"><a href="#/">All rounds</a></p>
     <h1>${r.kind === "Honeypot" ? "Honeypot round" : "Grant round"} ${id}</h1>
-    <p class="lede">${r.kind === "Honeypot" ? `Try to get a worthless proposal approved. Bounty: ${near(r.bounty)} NEAR.` : `Reviewed by ${r.models.join(", ")}. A median of ${r.threshold} or more with no injection flag files a ${near(r.tranche)} NEAR payout proposal on <a href="https://testnet.nearblocks.io/address/${esc(r.dao)}">${esc(r.dao)}</a>.`}</p>
+    <p class="lede">${r.kind === "Honeypot" ? `Try to get a worthless proposal approved. Bounty: ${near(r.bounty)} NEAR.` : `Reviewed by ${r.models.map(esc).join(", ")}. A median of ${r.threshold} or more with no injection flag files a ${near(r.tranche)} NEAR payout proposal on <a href="https://testnet.nearblocks.io/address/${esc(r.dao)}">${esc(r.dao)}</a>.`}</p>
     <ul class="list">${props.map((p) => {
       const scores = p.slots.filter(Boolean).map((s) => s.score);
       const s = p.signals || {};
@@ -124,23 +150,20 @@ async function proposal(id) {
       <h3>${esc(x.model)}</h3><span class="score">${x.score}</span></div>
       <p>${esc(reviewReason(x))}</p>${(x.flags || []).map((f) => `<span class="flag">${esc(f)}</span>`).join("")}
       <p class="proof" data-slot="${x.slot}">Checking the signature in your browser…</p>
-      <details><summary>What was checked</summary><p>The request was rebuilt here from the on-chain rubric and this proposal, hashed with SHA-256, and the model's ed25519 signature over <code>model:request-hash:response-hash</code> was checked against key <code>${esc(x.public_key)}</code>, which the contract registered for ${esc(x.model)} after checking its enclave attestation.</p>
+      <details><summary>What was checked</summary><p>Your browser read this proposal, the round's rubric and the key registration directly from a NEAR RPC node, rebuilt the exact request, hashed it with SHA-256, and checked the model's ed25519 signature over <code>model:request-hash:response-hash</code> with key <code>${esc(x.public_key)}</code>, which the contract has registered for ${esc(x.model)}. The score shown is read from the signed answer.</p>
       <p>Transaction <a href="https://testnet.nearblocks.io/txns/${esc(x.tx)}">${esc(x.tx)}</a></p><p class="hash" data-hashes="${x.slot}"></p></details></div>`).join("") || `<p class="muted">No reviews yet. The relayer picks new proposals up within a minute.</p>`}</div>`;
   for (const x of reviews) {
-    const res = await checkInBrowser(x, p, r, id);
+    let res;
+    try { res = await checkInBrowser(x, id); } catch (e) { res = { ok: false, why: e.message }; }
     const el = document.querySelector(`.proof[data-slot="${x.slot}"]`);
-    el.textContent = res.ok ? "Signature checked in your browser" : `Check failed: ${res.why}`;
+    el.textContent = res.ok ? "Checked in your browser: signature, on-chain key and score" : `Check failed: ${res.why}`;
     el.classList.toggle("bad", !res.ok);
     if (res.reqHash) document.querySelector(`[data-hashes="${x.slot}"]`).textContent = `request ${res.reqHash}, response ${res.respHash}`;
   }
 }
 
 function reviewReason(x) {
-  try {
-    const content = JSON.parse(new TextDecoder().decode(b64(x.response))).choices[0].message.content.trim()
-      .replace(/^```[a-zA-Z]*\n?/, "").replace(/```$/, "");
-    return JSON.parse(content).reason || "";
-  } catch { return ""; }
+  try { return signedReview(x.response).reason || ""; } catch { return ""; }
 }
 
 async function redteam() {

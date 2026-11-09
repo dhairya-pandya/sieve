@@ -62,7 +62,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "attest":
         from sieve.attest import model_signers
         from sieve.config import REVIEW_MODELS
-        model_signers(REVIEW_MODELS)
+        model_signers(REVIEW_MODELS, require_all=False)
         return 0
     print(f"{args.command}: not implemented yet", file=sys.stderr)
     return 1
