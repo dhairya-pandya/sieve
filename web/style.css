@@ -1,0 +1,65 @@
+:root {
+  --paper: #EEF2EF; --ink: #1F2A2E; --soft: #55666B; --mesh: #B9C6C0;
+  --pass: #2F6B4F; --fail: #9C2F4A; --proof: #2B4FD8; --surface: #F7F9F7;
+  --sans: "Familjen Grotesk", system-ui, sans-serif; --serif: "Literata", Georgia, serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #142024; --ink: #E3EAE6; --soft: #9DB0AA; --mesh: #34484D;
+    --pass: #6FC39A; --fail: #E07C93; --proof: #8EA6FF; --surface: #1A2A2F;
+  }
+}
+* { box-sizing: border-box; }
+html { background: var(--paper); }
+body { margin: 0; color: var(--ink); background: var(--paper); font: 400 17px/1.55 var(--sans); }
+a { color: inherit; text-decoration-color: var(--mesh); text-underline-offset: 3px; }
+a:hover { text-decoration-color: currentColor; }
+:focus-visible { outline: 2px solid var(--proof); outline-offset: 2px; }
+.top { display: flex; align-items: center; gap: 24px; max-width: 820px; margin: 0 auto; padding: 22px 16px 10px; flex-wrap: wrap; }
+.brand { font-weight: 700; font-size: 22px; text-decoration: none; letter-spacing: -0.01em; }
+.top nav { display: flex; gap: 18px; flex: 1; font-size: 15px; }
+.wallet, button, .button { font: 500 15px var(--sans); color: var(--ink); background: transparent; border: 1.5px solid var(--ink);
+  border-radius: 999px; padding: 6px 16px; cursor: pointer; }
+.wallet[data-on] { border-color: var(--pass); color: var(--pass); }
+button.primary { background: var(--ink); color: var(--paper); }
+button:disabled { opacity: .5; cursor: progress; }
+main { max-width: 820px; margin: 0 auto; padding: 8px 16px 64px; }
+h1 { font-size: 34px; line-height: 1.15; font-weight: 600; letter-spacing: -0.02em; margin: 28px 0 10px; max-width: 24ch; }
+h2 { font-size: 22px; font-weight: 600; margin: 40px 0 8px; }
+h3 { font-size: 17px; font-weight: 600; margin: 0; }
+.lede { font-size: 19px; color: var(--soft); max-width: 62ch; margin: 0 0 8px; }
+.muted { color: var(--soft); }
+.small { font-size: 14px; }
+.list { list-style: none; padding: 0; margin: 12px 0; border-top: 1px solid var(--mesh); }
+.row { display: grid; grid-template-columns: 1fr 260px; gap: 8px 24px; padding: 16px 0; border-bottom: 1px solid var(--mesh); align-items: center; }
+.row .meta { font-size: 14px; color: var(--soft); }
+@media (max-width: 640px) { .row { grid-template-columns: 1fr; } h1 { font-size: 28px; } }
+.status-pass { color: var(--pass); font-weight: 600; }
+.status-fail { color: var(--fail); font-weight: 600; }
+/* The score strip: 0-10, threshold line, one tick per model, a ring for the median. */
+.strip { position: relative; height: 34px; }
+.strip .rail { position: absolute; left: 0; right: 0; top: 16px; height: 2px; background: var(--mesh); }
+.strip .gate { position: absolute; top: 4px; bottom: 4px; width: 0; border-left: 2px dashed var(--soft); }
+.strip .gate::after { content: attr(data-label); position: absolute; top: -3px; left: 4px; font-size: 11px; color: var(--soft); white-space: nowrap; }
+.strip .mark { position: absolute; top: 10px; width: 3px; height: 14px; margin-left: -1.5px; background: var(--ink); border-radius: 2px; }
+.strip .median { position: absolute; top: 8px; width: 18px; height: 18px; margin-left: -9px; border-radius: 50%; border: 3px solid var(--ink); background: var(--paper); }
+.strip .median.pass { border-color: var(--pass); } .strip .median.fail { border-color: var(--fail); }
+.strip .scale { position: absolute; top: 24px; font-size: 11px; color: var(--soft); }
+.proposal-body { font: 400 18px/1.7 var(--serif); white-space: pre-wrap; max-width: 66ch; margin: 16px 0 8px; padding-left: 18px; border-left: 3px solid var(--mesh); }
+.review { padding: 18px 0; border-bottom: 1px solid var(--mesh); }
+.review .head { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; align-items: baseline; }
+.score { font-size: 30px; font-weight: 700; line-height: 1; }
+.proof { color: var(--proof); font-weight: 600; font-size: 15px; }
+.proof.bad { color: var(--fail); }
+details { margin-top: 8px; font-size: 14px; color: var(--soft); }
+details code, .hash { font-size: 12.5px; word-break: break-all; }
+.flag { display: inline-block; font-size: 13px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--fail); color: var(--fail); margin-right: 6px; }
+.callout { background: var(--surface); border: 1px solid var(--mesh); border-radius: 10px; padding: 16px 18px; margin: 20px 0; }
+form label { display: block; font-weight: 500; margin: 14px 0 6px; }
+input, textarea { width: 100%; font: 400 16px var(--sans); color: var(--ink); background: var(--surface); border: 1px solid var(--mesh); border-radius: 8px; padding: 10px 12px; }
+textarea { min-height: 220px; font-family: var(--serif); line-height: 1.6; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; margin: 12px 0; display: block; overflow-x: auto; }
+th, td { text-align: left; padding: 6px 10px 6px 0; border-bottom: 1px solid var(--mesh); vertical-align: top; }
+th { font-weight: 600; }
+.foot { max-width: 820px; margin: 0 auto; padding: 0 16px 40px; font-size: 13px; color: var(--soft); }
+@media (prefers-reduced-motion: no-preference) { .median { transition: left .4s ease; } }
