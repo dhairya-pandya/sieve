@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import os
 import json
 
 import httpx
@@ -20,7 +21,7 @@ from sieve.request import build_request
 
 NEARBLOCKS = "https://api-testnet.nearblocks.io/v3"
 ARCHIVAL_RPC = "https://archival-rpc.testnet.near.org"
-RPC = "https://rpc.testnet.near.org"
+RPC = os.environ.get("SIEVE_RPC", "https://rpc.testnet.fastnear.com")
 
 
 def check_review(event: dict, request: bytes, signers: dict[str, str]) -> str:

@@ -16,7 +16,8 @@ from sieve.chain import sandbox_bootstrap as sb
 
 NEAR = 10**24
 TGAS = 10**12
-TESTNET_RPC = "https://rpc.testnet.near.org"
+# FastNEAR by default: the NEAR-run public RPC rate-limits hard (HTTP 429). Override with SIEVE_RPC.
+TESTNET_RPC = os.environ.get("SIEVE_RPC", "https://rpc.testnet.fastnear.com")
 SPUTNIK_FACTORY = "sputnikv2.testnet"
 # Any DAO deployed by the testnet factory runs the factory's default Sputnik v2 code.
 SPUTNIK_CODE_SOURCE = "civic-vft8z.sputnikv2.testnet"
