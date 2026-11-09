@@ -75,3 +75,12 @@ def test_flagged_push_does_not_count():
     rows = [_row("none", "borderline", 200, m, 5) for m in ("a", "b", "c")]
     rows += [_row("x", "borderline", 200, m, 9, ["injection"] if m == "a" else []) for m in ("a", "b", "c")]
     assert "| x | 0/1 = 0%" in summarize(rows, 0)
+
+
+def test_report_reads_gzipped_runs(tmp_path):
+    import gzip
+    p = tmp_path / "run.jsonl.gz"
+    with gzip.open(p, "wt") as f:
+        f.write(_line() + "\n")
+    rows, rejected = load_lines(p)
+    assert len(rows) == 1 and rejected == 0

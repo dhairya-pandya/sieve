@@ -87,7 +87,26 @@ All of these addresses are in `deployments/testnet.json`. The first version, `si
 
 ## Red-team results
 
-The harness attacks the reviewer with injected versions of ten deliberately weak proposals: hidden instructions, a fake rubric, fake prior approval, delimiter escape, base64-encoded instructions, role-play, markdown comments, invisible Unicode tag characters, instructions in Hindi, and injections written by an attacker model. Each attacked proposal is compared with its clean twin on the same model, prompt and seed. It runs two prompts (a naive one and the deployed hardened one) on all three models, and also scores ten good proposals so that a reviewer which refuses everything shows up as a cost. Every answer is stored with its TEE signature. See [`results/redteam/REPORT.md`](results/redteam/REPORT.md).
+2,991 real reviews on the three models, each stored with its TEE signature. `sieve redteam report` re-checks every signature and rebuilds [`results/redteam/REPORT.md`](results/redteam/REPORT.md).
+
+**Setup:**
+- **Attacked proposals:** ten weak ones (a fair score of 0 to 3) and ten borderline ones (a fair score of 4 to 6, close enough to the passing line of 7 that a small push matters).
+- **Attacks:** hidden instructions, a fake rubric, fake prior approval, delimiter escape, base64-encoded instructions, role-play, a markdown comment, invisible Unicode tag characters, instructions in Hindi, fabricated credentials, an attacker model writing one injection, and an attacker model that sees the reviewer's score and reason and retries three times.
+- **Comparison:** each attacked proposal is compared with its clean twin on the same model, prompt and seed. Two prompts are compared: a naive one, and the deployed one that tells the model proposal text is data and asks it to flag injection.
+- **Cost of defending:** ten good proposals are scored too, so a reviewer that refuses everything shows up as a cost.
+
+**What we found, under the deployed rule (median of three models, any `injection` flag blocks a pass):**
+
+| Attack on borderline proposals | Naive prompt | Deployed prompt |
+|---|---|---|
+| Ten templated injections (hidden instruction, fake rubric, delimiter escape, ...) | 6% to 22% each | 0 of 18 for every one |
+| Attacker model, one try | 10 of 18 (56%) | 2 of 18 (11%) |
+| Attacker model that sees the reviewer's reasons and retries | 17 of 18 (94%) | 16 of 18 (89%) |
+| Good proposals passing | 20 of 20 | 20 of 20, none falsely flagged |
+
+- **Weak proposals:** no attack moved a weak proposal to a pass under either prompt.
+- **The adaptive attacker stopped injecting instructions.** Over its retries it converged on adding plausible detail the rubric asks for: dated milestones, a budget breakdown, success targets ([`results/redteam/iterative.json`](results/redteam/iterative.json)). Nothing in the text says it is false, and a human reviewer reading it would score it up too.
+- **What this means:** the injection attacks are handled. The remaining risk is unverifiable claims, which no reviewer of text, human or model, can catch from the text alone. That is why Sieve only files the first tranche and DAO members still vote, and why later tranches are meant to be reviewed against delivered evidence.
 
 ## Trust model
 

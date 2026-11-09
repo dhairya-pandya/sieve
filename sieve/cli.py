@@ -56,7 +56,7 @@ def main(argv: list[str] | None = None) -> int:
             run.run(trials=args.trials, budget_usd=args.budget, workers=args.workers, sets=tuple(args.sets.split(",")))
             return 0
         from pathlib import Path
-        paths = [Path(args.file)] if args.file else sorted(run.RESULTS.glob("*.jsonl"))
+        paths = [Path(args.file)] if args.file else sorted([*run.RESULTS.glob("*.jsonl"), *run.RESULTS.glob("*.jsonl.gz")])
         print(report.report(paths))
         return 0
     if args.command == "attest":

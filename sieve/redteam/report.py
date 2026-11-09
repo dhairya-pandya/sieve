@@ -3,6 +3,7 @@ signature is checked before it counts, and lines that fail are reported as rejec
 from __future__ import annotations
 
 import base64
+import gzip
 import json
 import math
 from collections import defaultdict
@@ -25,7 +26,8 @@ def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
 
 def load_lines(path: Path) -> tuple[list[dict], int]:
     rows, rejected = [], 0
-    for raw in path.read_text().splitlines():
+    text = gzip.decompress(path.read_bytes()).decode() if path.suffix == ".gz" else path.read_text()
+    for raw in text.splitlines():
         if not raw.strip():
             continue
         line = json.loads(raw)
