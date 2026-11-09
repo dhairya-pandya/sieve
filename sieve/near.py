@@ -46,6 +46,15 @@ def _outcome(result):
     return json.loads(base64.b64decode(value)) if value else None
 
 
+def account_key(account_id: str, env=None, credentials: Path | None = None) -> str:
+    """Private key from SIEVE_ACCOUNT_KEY (used in CI), else from the near-cli credentials file."""
+    env = os.environ if env is None else env
+    if env.get("SIEVE_ACCOUNT_KEY"):
+        return env["SIEVE_ACCOUNT_KEY"]
+    credentials = credentials or Path.home() / ".near-credentials" / "testnet"
+    return json.loads((credentials / f"{account_id}.json").read_text())["private_key"]
+
+
 def dao_policy(council: list[str], sieve_contract: str, proposal_bond: int) -> dict:
     """Council can do everything; the Sieve contract may only add Transfer proposals."""
     vote = {"weight_kind": "RoleWeight", "quorum": "0", "threshold": [1, 2]}
@@ -77,10 +86,8 @@ class Near:
         return cls(node.rpc_url, root, node)
 
     @classmethod
-    async def testnet(cls, account_id: str, key_path: Path | None = None) -> "Near":
-        key_path = key_path or Path.home() / ".near-credentials" / "testnet" / f"{account_id}.json"
-        key = json.loads(key_path.read_text())["private_key"]
-        root = Account(account_id, key, rpc_addr=TESTNET_RPC)
+    async def testnet(cls, account_id: str) -> "Near":
+        root = Account(account_id, account_key(account_id), rpc_addr=TESTNET_RPC)
         await root.startup()
         return cls(TESTNET_RPC, root)
 

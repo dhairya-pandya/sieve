@@ -1,0 +1,32 @@
+name: Relay reviews
+
+# Reviews new proposals and finalizes closed ones on testnet. Anyone can run a relayer;
+# this one pays gas from a dedicated account that has no special rights on the contract or the DAO.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: relay
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e .
+      - run: sieve relay --account "$SIEVE_ACCOUNT" --once
+        env:
+          NEAR_AI_API_KEY: ${{ secrets.NEAR_AI_API_KEY }}
+          SIEVE_ACCOUNT_KEY: ${{ secrets.SIEVE_RELAYER_KEY }}
+          SIEVE_ACCOUNT: ${{ vars.SIEVE_RELAYER_ACCOUNT }}
