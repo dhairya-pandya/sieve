@@ -77,14 +77,13 @@ Set `NEAR_AI_API_KEY` in your environment (never in a file in this repository). 
 
 | What | Where |
 |---|---|
-| Sieve contract | [`sieve.redswarm-dhairya.testnet`](https://testnet.nearblocks.io/address/sieve.redswarm-dhairya.testnet) |
-| Demo DAO | [`sieve-demo.sputnikv2.testnet`](https://testnet.nearblocks.io/address/sieve-demo.sputnikv2.testnet) |
-| Grant round | round 2, passes at a median of 7, first tranche 1 NEAR, one-hour review window |
-| Honeypot round | round 3, 2 NEAR bounty |
-| Earlier rounds | rounds 0 and 1 used a ten-minute window, too short for a relayer that runs every ten minutes |
+| Sieve contract | [`sieve-v2.redswarm-dhairya.testnet`](https://testnet.nearblocks.io/address/sieve-v2.redswarm-dhairya.testnet) |
+| Demo DAO | [`sieve-demo.sputnikv2.testnet`](https://testnet.nearblocks.io/address/sieve-demo.sputnikv2.testnet). The council approved DAO proposal 1, which gives the contract its only permission there: adding Transfer proposals |
+| Grant round | round 0, passes at a median of 7, first tranche 1 NEAR, one-hour review window |
+| Honeypot round | round 1, 2 NEAR bounty |
 | Relayer | GitHub Actions every ten minutes, from a gas-only account with no rights on the contract or the DAO |
 
-All of these addresses are in `deployments/testnet.json`.
+All of these addresses are in `deployments/testnet.json`. The first version, `sieve.redswarm-dhairya.testnet`, filed DAO proposal 0. It was replaced after a code review found that its relayer did not overrule cherry-picked scores, and it no longer holds a role on the DAO.
 
 ## Red-team results
 
