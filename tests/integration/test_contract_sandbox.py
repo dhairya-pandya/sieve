@@ -67,3 +67,13 @@ async def test_failed_dao_call_is_retryable(chain, deployed):
     p = await chain.view(d["sieve"], "get_proposal", {"proposal_id": pid})
     assert not p["finalized"] and not p["pending"]
     assert (await chain.view(d["sieve"], "get_round", {"round_id": rid}))["bonds"] == str(NEAR)
+
+
+async def test_existing_dao_grants_sieve_role_by_vote(chain, deployed):
+    """An existing DAO joins by approving one policy-change proposal, as a real community would."""
+    d = deployed
+    dao = await chain.create_dao("existing", [d["root"]], f"nobody.{d['root']}")
+    await chain.allow_on_dao(dao, d["sieve"], d["root"])
+    policy = await chain.view(dao, "get_policy")
+    role = next(r for r in policy["roles"] if r["name"] == "sieve")
+    assert role["kind"]["Group"] == [d["sieve"]] and role["permissions"] == ["transfer:AddProposal"]

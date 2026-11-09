@@ -136,6 +136,17 @@ class Near:
             path.write_bytes(code)
         return path.read_bytes()
 
+    async def allow_on_dao(self, dao: str, sieve_contract: str, council_member: str) -> int:
+        """Give `sieve_contract` the role to add Transfer proposals on an existing Sputnik DAO: the council
+        member proposes the policy change and votes for it. Returns the DAO proposal id."""
+        kind = {"ChangePolicyAddOrUpdateRole": {"role": {
+            "name": "sieve", "kind": {"Group": [sieve_contract]}, "permissions": ["transfer:AddProposal"], "vote_policy": {}}}}
+        bond = int((await self.view(dao, "get_policy"))["proposal_bond"])
+        pid = await self.call(council_member, dao, "add_proposal",
+                              {"proposal": {"description": f"Let {sieve_contract} file grant payouts", "kind": kind}}, deposit=bond)
+        await self.call(council_member, dao, "act_proposal", {"id": pid, "action": "VoteApprove", "proposal": kind})
+        return pid
+
     async def create_dao(self, name: str, council: list[str], sieve_contract: str,
                          proposal_bond: int = NEAR // 10, funds: int = 10 * NEAR) -> str:
         """A Sputnik v2 DAO whose policy lets `sieve_contract` add Transfer proposals."""

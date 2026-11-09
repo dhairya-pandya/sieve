@@ -47,7 +47,10 @@ async def setup(operator: str, name: str = "sieve", dao_name: str = "sieve-demo"
             await near.call(operator, contract, "register_signer", {"public_key_hex": key, "model": model, "expires_ms": expires})
 
         dao = f"{dao_name}.sputnikv2.testnet"
-        if not account_exists(dao):
+        if account_exists(dao):
+            pid = await near.allow_on_dao(dao, contract, operator)
+            print(f"existing DAO approved policy change {pid} giving {contract} the sieve role")
+        else:
             dao = await near.create_dao(dao_name, [operator], contract, proposal_bond=DAO_BOND, funds=7 * NEAR)
         print(f"dao {dao}")
 
