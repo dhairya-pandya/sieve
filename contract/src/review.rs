@@ -43,8 +43,15 @@ pub fn parse(response: &[u8]) -> Result<Parsed, &'static str> {
     let v: Value = serde_json::from_slice(response).map_err(|_| "not a review")?;
     let content = v["choices"][0]["message"]["content"].as_str().ok_or("not a review")?;
     let data: Value = serde_json::from_str(strip_fence(content)).map_err(|_| "not a review")?;
-    let obj = data.as_object().ok_or("not a review")?;
-    let score = obj.get("score").and_then(Value::as_u64).filter(|s| *s <= 10).ok_or("score must be an integer from 0 to 10")?;
+    let obj = data.as_object().ok_or("score must be an integer from 0 to 10")?;
+    let score = match obj.get("checks") {
+        // Checklist rubric: the score is the number of checks answered true, at most 10.
+        Some(Value::Object(checks)) if checks.len() <= 10 && checks.values().all(Value::is_boolean) => {
+            checks.values().filter(|v| v.as_bool() == Some(true)).count() as u64
+        }
+        Some(_) => return Err("checks must be an object of at most 10 booleans"),
+        None => obj.get("score").and_then(Value::as_u64).filter(|s| *s <= 10).ok_or("score must be an integer from 0 to 10")?,
+    };
     let flags = match obj.get("flags") {
         None => vec![],
         Some(Value::Array(items)) => items

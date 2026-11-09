@@ -193,3 +193,25 @@ fn review_emits_event_with_response() {
     assert_eq!(b64(d["response"].as_str().unwrap()), response(r#"{"score":6,"flags":[]}"#));
     let _ = accounts(0);
 }
+
+#[test]
+fn checklist_score_is_count_of_true_checks() {
+    let mut c = three_model_round();
+    let score = post(&mut c, 0, 0, 1, r#"{"checks":{"a":true,"b":false,"c":true,"d":true},"score":10,"flags":[]}"#, 3_000);
+    assert_eq!(score, 3);
+}
+
+#[test]
+#[should_panic(expected = "checks must be an object of at most 10 booleans")]
+fn checklist_rejects_string_checks() {
+    let mut c = three_model_round();
+    post(&mut c, 0, 0, 1, r#"{"checks":{"a":"yes"},"flags":[]}"#, 3_000);
+}
+
+#[test]
+#[should_panic(expected = "checks must be an object of at most 10 booleans")]
+fn checklist_rejects_more_than_ten() {
+    let mut c = three_model_round();
+    let checks: Vec<String> = (0..11).map(|i| format!("\"c{i}\":true")).collect();
+    post(&mut c, 0, 0, 1, &format!("{{\"checks\":{{{}}},\"flags\":[]}}", checks.join(",")), 3_000);
+}

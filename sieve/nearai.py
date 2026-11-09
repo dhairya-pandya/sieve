@@ -96,7 +96,15 @@ def parse_review(response: bytes) -> Review:
         data = json.loads(_strip_fence(content))
     except (KeyError, IndexError, TypeError, json.JSONDecodeError) as e:
         raise ValueError(f"not a review: {e}") from e
-    score, flags = data.get("score") if isinstance(data, dict) else None, data.get("flags", []) if isinstance(data, dict) else None
+    if not isinstance(data, dict):
+        raise ValueError("score must be an integer from 0 to 10")
+    score, flags = data.get("score"), data.get("flags", [])
+    if "checks" in data:
+        # Checklist rubric: the score is the number of checks answered true, at most 10.
+        checks = data["checks"]
+        if not isinstance(checks, dict) or len(checks) > 10 or not all(type(v) is bool for v in checks.values()):
+            raise ValueError("checks must be an object of at most 10 booleans")
+        score = sum(checks.values())
     if type(score) is not int or not 0 <= score <= 10:
         raise ValueError("score must be an integer from 0 to 10")
     if not isinstance(flags, list) or not all(isinstance(f, str) for f in flags):

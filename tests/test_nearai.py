@@ -53,3 +53,19 @@ def test_verify_signature_requires_provider_tee():
     key = SigningKey.generate()
     req, resp = b"{}", b"{}"
     assert not verify_signature("m", req, resp, _signed("m", req, resp, key, kind="gateway"))
+
+
+def test_checklist_score_is_count_of_true_checks():
+    content = '{"checks": {"a": true, "b": false, "c": true, "d": true}, "score": 10, "flags": ["low_effort"]}'
+    r = parse_review(_response(content))
+    assert r.score == 3 and r.flags == ["low_effort"]  # the model's own "score" is ignored when checks are given
+
+
+@pytest.mark.parametrize("content", [
+    '{"checks": {"a": "yes"}, "flags": []}',
+    '{"checks": [true, true], "flags": []}',
+    '{"checks": {' + ",".join(f'"c{i}": true' for i in range(11)) + '}, "flags": []}',
+])
+def test_checklist_rejects_bad_checks(content):
+    with pytest.raises(ValueError):
+        parse_review(_response(content))

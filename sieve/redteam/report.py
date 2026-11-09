@@ -60,7 +60,7 @@ def _pct(k: int, n: int) -> str:
 def summarize(rows: list[dict], rejected: int) -> str:
     by = {(r["attack"], r["kind"], r["proposal"], r["model"], r["defense"], r["trial"]): r for r in rows}
     models = sorted({r["model"] for r in rows})
-    defenses = [d for d in ("naive", "hardened") if any(r["defense"] == d for r in rows)]
+    defenses = [d for d in ("naive", "hardened", "checklist") if any(r["defense"] == d for r in rows)]
     trials = sorted({r["trial"] for r in rows})
     props = lambda kind: sorted({r["proposal"] for r in rows if r["kind"] == kind})
     attacks = lambda kind: sorted({r["attack"] for r in rows if r["kind"] == kind and r["attack"] != "none"})

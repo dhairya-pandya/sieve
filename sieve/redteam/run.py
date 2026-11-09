@@ -48,12 +48,13 @@ def adaptive_injections(proposals=WEAK, name: str = "adaptive") -> dict[int, str
     return out
 
 
-def iterative_injections(proposals=BORDERLINE, target: str = REVIEW_MODELS[0]) -> dict[int, str]:
-    """Attacker adapts over three rounds against the deployed prompt on one model; transfer to the others is measured."""
-    path = RESULTS / "iterative.json"
+def iterative_injections(proposals=BORDERLINE, target: str = REVIEW_MODELS[0], rubric: str = "grant_v1",
+                         name: str = "iterative") -> dict[int, str]:
+    """Attacker adapts over three rounds against one rubric on one model; transfer to the others is measured."""
+    path = RESULTS / f"{name}.json"
     if path.exists():
         return {int(k): v for k, v in json.loads(path.read_text()).items()}
-    system = prompt("grant_v1")
+    system = prompt(rubric)
 
     def review(body: str) -> tuple[int, list[str], str]:
         resp, _ = nearai.complete(build_request(target, system, ROUND_ID, 0, "draft", body, 7))
@@ -92,11 +93,13 @@ def jobs(models, defenses, trials, sets=("weak", "good")) -> list[dict]:
     if "borderline" in sets:
         adaptive = adaptive_injections(BORDERLINE, "adaptive_borderline")
         iterative = iterative_injections()
+        iterative_v2 = iterative_injections(rubric="grant_v2", name="iterative_checklist")
         cases += [("none", "borderline", 200 + i, t, b) for i, (t, b) in enumerate(BORDERLINE)]
         cases += [(name, "borderline", 200 + i, t, attack(b))
                   for name, attack in ATTACKS.items() for i, (t, b) in enumerate(BORDERLINE)]
         cases += [("llm_adaptive", "borderline", 200 + i, BORDERLINE[i][0], b) for i, b in adaptive.items()]
         cases += [("llm_iterative", "borderline", 200 + i, BORDERLINE[i][0], b) for i, b in iterative.items()]
+        cases += [("llm_iterative_vs_checklist", "borderline", 200 + i, BORDERLINE[i][0], b) for i, b in iterative_v2.items()]
     return [dict(attack=a, kind=k, proposal=p, title=t, body=b, model=m, defense=d, trial=tr, seed=1000 * tr + p + 1)
             for a, k, p, t, b in cases for m in models for d in defenses for tr in range(trials)]
 
@@ -130,8 +133,8 @@ def run(models=REVIEW_MODELS, defenses=("naive", "hardened"), trials=2, budget_u
     print(f"{len(todo)} review calls, estimated ${cost:.2f}")
     if cost > budget_usd:
         raise SystemExit(f"estimated cost ${cost:.2f} is over the ${budget_usd:.2f} budget")
-    systems = {"naive": prompt("naive_v1"), "hardened": prompt("grant_v1")}
-    out = RESULTS / f"{time.strftime('%Y-%m-%d')}-{'-'.join(sets)}.jsonl"
+    systems = {"naive": prompt("naive_v1"), "hardened": prompt("grant_v1"), "checklist": prompt("grant_v2")}
+    out = RESULTS / f"{time.strftime('%Y-%m-%d')}-{'-'.join(sets)}-{'-'.join(defenses)}.jsonl"
     lock, done = threading.Lock(), [0]
     with open(out, "a") as f, ThreadPoolExecutor(workers) as pool:
         for line in pool.map(lambda j: one(j, systems), todo):

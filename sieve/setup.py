@@ -56,8 +56,11 @@ async def setup(operator: str, name: str = "sieve", dao_name: str = "sieve-demo"
 
         models = list(REVIEW_MODELS)
         grant = await near.call(operator, contract, "create_round", {
-            "kind": "Grant", "dao": dao, "system": prompt("grant_v1"), "models": models, "threshold": 7,
+            "kind": "Grant", "dao": dao, "system": prompt("grant_v2"), "models": models, "threshold": 7,
             "tranche": str(NEAR), "dao_bond": str(DAO_BOND), "window_ms": 3_600_000}, deposit=NEAR)
+        # Three tranches of 1 NEAR; an applicant with no delivered milestone gets 0.2 NEAR first.
+        await near.call(operator, contract, "set_milestones", {
+            "round_id": grant, "milestone_system": prompt("milestone_v1"), "newcomer_tranche": str(NEAR // 5), "tranches": 3})
         honeypot = await near.call(operator, contract, "create_round", {
             "kind": "Honeypot", "dao": dao, "system": prompt("honeypot_v1"), "models": models, "threshold": 7,
             "tranche": "0", "dao_bond": "0", "window_ms": 3_600_000}, deposit=2 * NEAR)

@@ -23,6 +23,7 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--budget", type=float, default=3.0, help="abort if the estimated cost in USD is higher")
     r.add_argument("--sets", default="weak,good", help="proposal sets: weak, good, borderline")
     r.add_argument("--workers", type=int, default=8)
+    r.add_argument("--defenses", default="naive,hardened", help="prompts to test: naive, hardened, checklist")
     r = rs.add_parser("report", help="verify a run's signatures and print the results (no key needed)")
     r.add_argument("file", nargs="?", help="run file (default: newest in results/redteam)")
     sub.add_parser("attest", help="check the TEE attestation of every review model")
@@ -53,7 +54,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "redteam":
         from sieve.redteam import report, run
         if args.redteam_command == "run":
-            run.run(trials=args.trials, budget_usd=args.budget, workers=args.workers, sets=tuple(args.sets.split(",")))
+            run.run(trials=args.trials, budget_usd=args.budget, workers=args.workers, sets=tuple(args.sets.split(",")),
+                    defenses=tuple(args.defenses.split(",")))
             return 0
         from pathlib import Path
         paths = [Path(args.file)] if args.file else sorted([*run.RESULTS.glob("*.jsonl"), *run.RESULTS.glob("*.jsonl.gz")])
