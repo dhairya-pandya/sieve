@@ -55,6 +55,11 @@ def test_api_rounds_list():
     assert d["rounds"][0]["id"] == 0 and d["contract"] == "sieve.test"
 
 
+def test_api_marks_current_rounds():
+    client = TestClient(create_app(StubChain(), signals=lambda r, p: {}, current={"grant": 0}))
+    assert client.get("/api/rounds").json()["current"] == {"grant": 0}
+
+
 def test_api_unknown_proposal_is_404():
     class Missing(StubChain):
         def view(self, method, args=None):

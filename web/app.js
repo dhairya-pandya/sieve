@@ -60,9 +60,12 @@ function status(p) {
 }
 
 async function home() {
-  const { rounds, contract } = await get("/api/rounds");
-  const grant = rounds.filter((r) => r.kind === "Grant");
-  const honey = rounds.filter((r) => r.kind === "Honeypot");
+  const { rounds, current } = await get("/api/rounds");
+  const ids = new Set(Object.values(current || {}));
+  const live = ids.size ? rounds.filter((r) => ids.has(r.id)) : rounds;
+  const earlier = rounds.filter((r) => !live.includes(r));
+  const grant = live.filter((r) => r.kind === "Grant");
+  const honey = live.filter((r) => r.kind === "Honeypot");
   app.innerHTML = `
     <h1>Grant reviews that can't be talked into a score</h1>
     <p class="lede">Three AI models review every proposal against a rubric stored on NEAR. Each answer is signed inside a secure enclave, and the contract rebuilds the exact prompt and checks the signatures before the median score counts. Passing proposals go to the DAO's vote; the AI never moves money.</p>
@@ -71,7 +74,8 @@ async function home() {
       <div class="meta">DAO ${esc(r.dao)}. First payout ${near(r.tranche)} NEAR. Passes at a median of ${r.threshold} out of 10.</div></div>
       <div><a class="button" href="#/round/${r.id}">See proposals</a></div></li>`).join("")}</ul>
     ${honey.map((r) => `<div class="callout"><h3>Honeypot: ${near(r.bounty)} NEAR for fooling the reviewer</h3>
-      <p class="small">Every proposal in <a href="#/round/${r.id}">round ${r.id}</a> is worthless by definition, so the honest score is 0. If any proposal gets a passing median with no injection flag, the contract pays the bounty to its author automatically. ${r.open ? "Unclaimed so far." : "It has been claimed."}</p></div>`).join("")}`;
+      <p class="small">Every proposal in <a href="#/round/${r.id}">round ${r.id}</a> is worthless by definition, so the honest score is 0. If any proposal gets a passing median with no injection flag, the contract pays the bounty to its author automatically. ${r.open ? "Unclaimed so far." : "It has been claimed."}</p></div>`).join("")}
+    ${earlier.length ? `<p class="small muted">Earlier rounds: ${earlier.map((r) => `<a href="#/round/${r.id}">round ${r.id}</a>`).join(", ")}.</p>` : ""}`;
 }
 
 async function round(id) {
@@ -173,7 +177,7 @@ function about() {
       <li>A community opens a round on its Sputnik DAO. The rubric and the exact prompt template are stored in the Sieve contract.</li>
       <li>Applicants submit proposals on chain with their NEAR wallet.</li>
       <li>A relayer, which anyone can run, sends each proposal to three models in NEAR AI Cloud's secure enclaves and posts their signed answers.</li>
-      <li>The contract rebuilds the exact prompt, checks each model's signature with a key registered after checking the enclave's attestation, and reads the score from the signed answer. For ten minutes anyone can post a lower signed score for the same prompt, so cherry-picking a lucky answer does not help.</li>
+      <li>The contract rebuilds the exact prompt, checks each model's signature with a key registered after checking the enclave's attestation, and reads the score from the signed answer. During the review window (an hour in the current rounds) anyone can post a lower signed score for the same prompt, so cherry-picking a lucky answer does not help.</li>
       <li>The median of the three scores decides. If it passes and no model flagged an injection attempt, the contract files a payout proposal on the DAO for members to vote on.</li>
     </ol>
     <p>Code and the threat model: <a href="https://github.com/dhairya-pandya/sieve">github.com/dhairya-pandya/sieve</a>.</p>`;

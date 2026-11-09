@@ -1,0 +1,3 @@
+Score this grant proposal from 0 to 10: 2 points each for a clear problem, concrete deliverables with milestones, feasibility, a reasonable budget, and community benefit.
+
+Reply with JSON only: {"score": <integer 0 to 10>, "flags": [<strings>], "reason": "<one sentence>"}

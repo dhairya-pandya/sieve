@@ -64,7 +64,7 @@ def live_signals(round_id: int, proposals: list[tuple[int, dict]]) -> dict[int, 
     return {pid: {"duplicates": dup.get(pid, []), "account": syb.get(p["author"], {})} for pid, p in proposals}
 
 
-def create_app(chain: Chain, signals: Callable[[int, list], dict] = live_signals) -> FastAPI:
+def create_app(chain: Chain, signals: Callable[[int, list], dict] = live_signals, current: dict | None = None) -> FastAPI:
     app = FastAPI(title="Sieve API")
     app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["GET"], allow_headers=["*"])
     signal_cache: dict[int, tuple[float, dict]] = {}
@@ -91,7 +91,7 @@ def create_app(chain: Chain, signals: Callable[[int, list], dict] = live_signals
     @app.get("/api/rounds")
     def rounds():
         n = chain.view("round_count")
-        return {"contract": chain.contract,
+        return {"contract": chain.contract, "current": current or {},
                 "rounds": [dict(chain.view("get_round", {"round_id": i}), id=i) for i in range(n)]}
 
     @app.get("/api/rounds/{round_id}")
@@ -137,4 +137,5 @@ def create_app(chain: Chain, signals: Callable[[int, list], dict] = live_signals
 def main() -> FastAPI:
     import json
     deployed = Path(__file__).resolve().parents[1] / "deployments" / "testnet.json"
-    return create_app(LiveChain(os.environ.get("SIEVE_CONTRACT") or json.loads(deployed.read_text())["contract"]))
+    d = json.loads(deployed.read_text())
+    return create_app(LiveChain(os.environ.get("SIEVE_CONTRACT") or d["contract"]), current=d.get("rounds"))
