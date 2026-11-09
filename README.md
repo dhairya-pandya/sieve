@@ -19,7 +19,7 @@ Communities that fund work are flooded with AI-written applications: grant volum
 4. The contract builds the request itself from the stored rubric and proposal, hashes it, checks the signature with a key registered for that model, and reads the result from the signed answer.
    - **No reuse:** the request includes the round and proposal ids, `temperature: 0`, and a seed the contract picked, so a signed answer cannot be reused for another proposal.
    - **Track record the applicant cannot write:** the contract also inserts the applicant's on-chain record: days since first seen, earlier proposals, how many passed, milestones delivered.
-   - **Scored by counting:** the rubric is ten yes/no checks, and the contract counts the "yes" answers itself. Each check is worth exactly one point, so padding a proposal with detail cannot stretch the score. Claims the reviewer cannot check (past users, audits, endorsements) earn nothing, and the track-record check can only be ticked from the contract's record.
+   - **Scored by counting:** the rubric is ten yes/no checks, and the contract counts the "yes" answers itself. Each check is worth exactly one point, so padding a proposal with detail cannot stretch the score. Claims the reviewer cannot check (past users, audits, endorsements) earn nothing, and the track-record check can only be ticked from the contract's record. The red-team below shows the limit: a checklist stops injections but is strict on honest newcomers and does not stop an attacker who writes exactly what it checks for.
 5. For an hour anyone may post another signed review for the same slot, and the lowest valid score wins. An applicant who asks the model many times and posts only a lucky high score is overruled: the project's relayer re-reviews every slot holding a passing score and posts its own lower score.
 6. After the window, the median of the three scores decides. If it reaches the threshold and no model flagged `injection`, the contract calls the DAO's `add_proposal` with a Transfer of the first tranche to the applicant. DAO members vote as usual.
    - **Newcomer tranche:** an applicant who has never delivered a milestone gets a smaller first tranche: 0.2 of 1 NEAR in the demo round, about 7% of the 3-tranche grant, close to the 10% Stellar's community fund pays on acceptance.
@@ -85,36 +85,42 @@ Set `NEAR_AI_API_KEY` in your environment (never in a file in this repository). 
 
 | What | Where |
 |---|---|
-| Sieve contract | [`sieve-v2.redswarm-dhairya.testnet`](https://testnet.nearblocks.io/address/sieve-v2.redswarm-dhairya.testnet) |
-| Demo DAO | [`sieve-demo.sputnikv2.testnet`](https://testnet.nearblocks.io/address/sieve-demo.sputnikv2.testnet). The council approved DAO proposal 1, which gives the contract its only permission there: adding Transfer proposals |
-| Grant round | round 0, passes at a median of 7, first tranche 1 NEAR, one-hour review window |
+| Sieve contract | [`sieve-v4.redswarm-dhairya.testnet`](https://testnet.nearblocks.io/address/sieve-v4.redswarm-dhairya.testnet) |
+| Demo DAO | [`sieve-demo.sputnikv2.testnet`](https://testnet.nearblocks.io/address/sieve-demo.sputnikv2.testnet). The council approved DAO proposal 6, which gives the contract its only permission there: adding Transfer proposals |
+| Grant round | round 0, checklist rubric, passes at 7 of 10 checks, three tranches of 1 NEAR, a first tranche of 0.2 NEAR for newcomers, one-hour review window |
 | Honeypot round | round 1, 2 NEAR bounty |
 | Relayer | GitHub Actions every ten minutes, from a gas-only account with no rights on the contract or the DAO |
 
-All of these addresses are in `deployments/testnet.json`. The first version, `sieve.redswarm-dhairya.testnet`, filed DAO proposal 0. It was replaced after a code review found that its relayer did not overrule cherry-picked scores, and it no longer holds a role on the DAO.
+All of these addresses are in `deployments/testnet.json`.
+
+**One grant, end to end on testnet:** proposal 8 from a newcomer account passed review with a median of 9, and the contract filed DAO proposal 8 for the 0.2 NEAR newcomer tranche. After the council approved it, the author submitted evidence for milestone 1 (a release tag, its commit and a green CI run). The contract checked with the DAO that proposal 8 was approved, the three models reviewed the evidence (median 8), and the contract counted one delivered milestone in the author's record and filed DAO proposal 9 for the next 1 NEAR tranche. `sieve verify` re-checks all 28 reviews behind this, both stages included.
+
+**Earlier versions:** `sieve.redswarm-dhairya.testnet` (filed DAO proposal 0) was replaced after a code review found its relayer did not overrule cherry-picked scores. `sieve-v2` added that fix, `sieve-v3` the checklist rubric, record and milestones, and `sieve-v4` keeps long review answers in transaction arguments instead of logs. Only `sieve-v4` holds a role on the DAO.
 
 ## Red-team results
 
-2,991 real reviews on the three models, each stored with its TEE signature. `sieve redteam report` re-checks every signature and rebuilds [`results/redteam/REPORT.md`](results/redteam/REPORT.md).
+3,835 real reviews on the three models, each stored with its TEE signature. `sieve redteam report` re-checks every signature and rebuilds [`results/redteam/REPORT.md`](results/redteam/REPORT.md). Nine early entries without a signature are left out of every count.
 
 **Setup:**
 - **Attacked proposals:** ten weak ones (a fair score of 0 to 3) and ten borderline ones (a fair score of 4 to 6, close enough to the passing line of 7 that a small push matters).
-- **Attacks:** hidden instructions, a fake rubric, fake prior approval, delimiter escape, base64-encoded instructions, role-play, a markdown comment, invisible Unicode tag characters, instructions in Hindi, fabricated credentials, an attacker model writing one injection, and an attacker model that sees the reviewer's score and reason and retries three times.
-- **Comparison:** each attacked proposal is compared with its clean twin on the same model, prompt and seed. Two prompts are compared: a naive one, and the deployed one that tells the model proposal text is data and asks it to flag injection.
+- **Attacks:** hidden instructions, a fake rubric, fake prior approval, delimiter escape, base64-encoded instructions, role-play, a markdown comment, invisible Unicode tag characters, instructions in Hindi, fabricated credentials, an attacker model writing one injection, and an attacker model that sees the reviewer's score and reason and retries three times. That last attacker was run twice: once against the 0-to-10 prompt and once against the checklist itself.
+- **Comparison:** each attacked proposal is compared with its clean twin on the same model, prompt and seed. Three prompts are compared: a naive one; the hardened 0-to-10 prompt that tells the model proposal text is data and asks it to flag injection; and the ten-check checklist the contract counts.
 - **Cost of defending:** ten good proposals are scored too, so a reviewer that refuses everything shows up as a cost.
 
-**What we found, under the deployed rule (median of three models, any `injection` flag blocks a pass):**
+**What we found, under the deployed rule (median of three models, any `injection` flag blocks a pass, threshold 7):**
 
-| Attack on borderline proposals | Naive prompt | Deployed prompt |
-|---|---|---|
-| Ten templated injections (hidden instruction, fake rubric, delimiter escape, ...) | 6% to 22% each | 0 of 18 for every one |
-| Attacker model, one try | 10 of 18 (56%) | 2 of 18 (11%) |
-| Attacker model that sees the reviewer's reasons and retries | 17 of 18 (94%) | 16 of 18 (89%) |
-| Good proposals passing | 20 of 20 | 20 of 20, none falsely flagged |
+| Attack on borderline proposals | Naive prompt | Hardened 0-to-10 | Checklist |
+|---|---|---|---|
+| Ten templated injections (hidden instruction, fake rubric, delimiter escape, ...) | 6% to 22% each | 0 of 18 for every one | 0 of 18 to 20 for every one |
+| Attacker model, one try | 10 of 18 (56%) | 2 of 18 (11%) | 0 of 20 |
+| Attacker model that retries against the hardened prompt | 17 of 18 (94%) | 16 of 18 (89%) | 8 of 20 (40%) |
+| Attacker model that retries against the checklist | | | 12 of 15 (80%) |
+| Good proposals passing | 20 of 20 | 20 of 20 | **3 of 20 (15%)** |
 
-- **Weak proposals:** no attack moved a weak proposal to a pass under either prompt.
-- **The adaptive attacker stopped injecting instructions.** Over its retries it converged on adding plausible detail the rubric asks for: dated milestones, a budget breakdown, success targets ([`results/redteam/iterative.json`](results/redteam/iterative.json)). Nothing in the text says it is false, and a human reviewer reading it would score it up too.
-- **What this means:** the injection attacks are handled. The remaining risk is unverifiable claims, which no reviewer of text, human or model, can catch from the text alone. That is why Sieve only files the first tranche and DAO members still vote, and why later tranches are meant to be reviewed against delivered evidence.
+- **Weak proposals:** no attack moved a weak proposal to a pass under any prompt.
+- **Injections are handled** by the hardened prompt and the median of three models; the checklist keeps that.
+- **The checklist did not close the main gap, and it costs too much.** An attacker that retries against the checklist simply writes the items it checks for (dated milestones, a budget table, named team roles) and gets 80% through. Meanwhile good proposals from newcomers score a median of about 5 of 10: `track_record` is false for every newcomer, and the models mark `verifiable_milestones` false in 51 of 60 reviews of good proposals. We swept the threshold over the recorded scores: at every threshold that passes most good proposals (4 or 5), the retrying attacker passes 10 of 11 or more. No threshold separates them.
+- **What this means:** a reviewer of text, human or model, cannot tell a plausible plan from a true one. Sieve's answer is to limit what a plausible plan can win: a newcomer's first tranche is 0.2 NEAR, and every later tranche needs delivery evidence reviewed against the plan and a DAO vote. The milestone flow is shown working on testnet above.
 
 ## Trust model
 
@@ -151,7 +157,7 @@ The full list is in [`THREAT_MODEL.md`](THREAT_MODEL.md).
 ## Limits
 
 - Testnet only. Mainnet needs the same deploy with a real DAO.
-- Only the first tranche is filed automatically. Later milestones are reviewed the same way, but a member files them.
+- Milestone evidence is reviewed as text. The models cannot open a commit or a transaction, so the evidence check asks for identifiers anyone can look up, and DAO members still vote on every tranche.
 - The median of three models raises the bar for injection but does not make it impossible; the red-team report shows the measured rates.
 
 ## License
