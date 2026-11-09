@@ -1,7 +1,8 @@
-"""Command-line entry point. Subcommands are registered by their modules."""
+"""Command-line entry point."""
 from __future__ import annotations
 
 import argparse
+import asyncio
 import sys
 
 
@@ -9,11 +10,25 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="sieve", description="Verifiable AI grant reviews for NEAR DAOs")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("verify", help="re-check every on-chain review without an API key")
+    p = sub.add_parser("setup", help="deploy the contract, demo DAO and rounds to testnet")
+    p.add_argument("--operator", required=True, help="funded testnet account with a key in ~/.near-credentials/testnet")
+    p.add_argument("--name", default="sieve", help="sub-account name for the contract")
+    p.add_argument("--dao", default="sieve-demo", help="Sputnik DAO name")
+    sub.add_parser("attest", help="check the TEE attestation of every review model")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.command == "setup":
+        from sieve.setup import setup
+        asyncio.run(setup(args.operator, args.name, args.dao))
+        return 0
+    if args.command == "attest":
+        from sieve.attest import model_signers
+        from sieve.config import REVIEW_MODELS
+        model_signers(REVIEW_MODELS)
+        return 0
     print(f"{args.command}: not implemented yet", file=sys.stderr)
     return 1
 

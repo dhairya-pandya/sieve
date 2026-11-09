@@ -15,6 +15,7 @@ dependencies = [
   "py-near",
   "pynacl",
   "base58",
+  "dcap-qvl",
 ]
 
 [project.optional-dependencies]
