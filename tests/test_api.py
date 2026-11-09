@@ -26,7 +26,7 @@ class StubChain:
                     "submitted_ms": 1, "slots": [None], "finalized": False, "pending": False, "outcome": None}
         if method == "list_proposals":
             return [[0, self.view("get_proposal")]]
-        if method == "review_request":
+        if method in ("review_request", "stage_request"):
             return F["request_b64"]
         if method == "get_signer":
             return {"model": F["model"], "expires_ms": 2**62}

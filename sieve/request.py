@@ -10,12 +10,25 @@ def json_str(s: str) -> str:
     return json.dumps(s, ensure_ascii=False)
 
 
-def user_message(round_id: int, proposal_id: int, title: str, body: str) -> str:
-    return f"Round {round_id}, proposal {proposal_id}.\n<proposal>\nTITLE: {title}\n\n{body}\n</proposal>"
+Record = tuple[int, int, int, int]  # days since first seen, proposals submitted before, passed, milestones delivered
 
 
-def build_request(model: str, system: str, round_id: int, proposal_id: int, title: str, body: str, seed: int) -> bytes:
-    user = user_message(round_id, proposal_id, title, body)
+def user_message(round_id: int, proposal_id: int, title: str, body: str,
+                 record: Record = (0, 0, 0, 0), stage: int = 0, evidence: str | None = None) -> str:
+    days, submitted, passed, delivered = record
+    text = (f"Round {round_id}, proposal {proposal_id}, stage {stage}.\n"
+            "Applicant record (written by the Sieve contract, not by the applicant): "
+            f"first seen {days} days before this submission; {submitted} proposals submitted before this one; "
+            f"{passed} passed review; {delivered} milestones delivered.\n"
+            f"<proposal>\nTITLE: {title}\n\n{body}\n</proposal>")
+    if stage > 0:
+        text += f'\n<evidence milestone="{stage}">\n{evidence or ""}\n</evidence>'
+    return text
+
+
+def build_request(model: str, system: str, round_id: int, proposal_id: int, title: str, body: str, seed: int,
+                  record: Record = (0, 0, 0, 0), stage: int = 0, evidence: str | None = None) -> bytes:
+    user = user_message(round_id, proposal_id, title, body, record, stage, evidence)
     return (
         '{"model":' + json_str(model)
         + ',"messages":[{"role":"system","content":' + json_str(system)

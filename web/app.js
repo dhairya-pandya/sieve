@@ -33,8 +33,11 @@ function signedReview(responseB64) {
 }
 
 // The canonical request, byte for byte as sieve/request.py and the contract build it.
-function buildRequest(model, system, roundId, proposalId, title, body, seed) {
-  const user = `Round ${roundId}, proposal ${proposalId}.\n<proposal>\nTITLE: ${title}\n\n${body}\n</proposal>`;
+function buildRequest(model, system, roundId, proposalId, title, body, seed, record, stage, evidence) {
+  let user = `Round ${roundId}, proposal ${proposalId}, stage ${stage}.\nApplicant record (written by the Sieve contract, not by the applicant): ` +
+    `first seen ${record.days} days before this submission; ${record.submitted} proposals submitted before this one; ` +
+    `${record.passed} passed review; ${record.delivered} milestones delivered.\n<proposal>\nTITLE: ${title}\n\n${body}\n</proposal>`;
+  if (stage > 0) user += `\n<evidence milestone="${stage}">\n${evidence ?? ""}\n</evidence>`;
   return `{"model":${JSON.stringify(model)},"messages":[{"role":"system","content":${JSON.stringify(system)}},` +
     `{"role":"user","content":${JSON.stringify(user)}}],"temperature":0,"seed":${seed},"response_format":{"type":"json_object"}}`;
 }
@@ -50,7 +53,11 @@ async function checkInBrowser(review, proposalId) {
   const round = await rpcView("get_round", { round_id: proposal.round_id });
   if (!signer || signer.model !== review.model) return { ok: false, why: "key is not registered on chain for this model" };
   if (round.models[review.slot] !== review.model) return { ok: false, why: "model does not match the round's slot" };
-  const local = buildRequest(review.model, round.system, proposal.round_id, proposalId, proposal.title, proposal.body, proposal.seed);
+  const stage = review.stage ?? 0;
+  const at = stage === proposal.stage ? proposal : proposal.past[stage];
+  const system = stage === 0 ? round.system : round.milestone_system;
+  const local = buildRequest(review.model, system, proposal.round_id, proposalId, proposal.title, proposal.body,
+    at.seed, at.record, stage, at.evidence);
   let signedScore;
   try { signedScore = signedReview(review.response).score; } catch { return { ok: false, why: "signed answer is not a review" }; }
   if (signedScore !== review.score) return { ok: false, why: "shown score differs from the signed answer" };
@@ -74,6 +81,12 @@ function strip(scores, threshold) {
 }
 
 function status(p) {
+  const tranche = (p.dao_proposal_ids || []).length;
+  if (p.completed) return `<span class="status-pass">All milestones delivered</span>`;
+  if (p.stage > 0 && !p.finalized) return `Milestone ${p.stage} evidence under review`;
+  if (p.finalized && p.outcome && p.outcome.passed && tranche) {
+    return `<span class="status-pass">${p.stage === 0 ? "Passed" : `Milestone ${p.stage} accepted`}; tranche ${tranche} (${near(p.outcome.amount)} NEAR) sent to the DAO vote as proposal ${p.dao_proposal_ids[tranche - 1]}</span>`;
+  }
   if (p.finalized && p.outcome) {
     if (p.outcome.paid) return `<span class="status-pass">Won the honeypot bounty</span>`;
     if (p.outcome.passed && p.outcome.dao_proposal_id == null) return `<span class="status-pass">Passed, but the bounty was already claimed</span>`;
@@ -136,30 +149,67 @@ function submitForm(id, r) {
 async function proposal(id) {
   const d = await get(`/api/proposals/${id}`);
   const { proposal: p, round: r } = d;
-  const bySlot = {};
-  for (const rev of d.reviews) if (!bySlot[rev.slot] || rev.score < bySlot[rev.slot].score) bySlot[rev.slot] = rev;
-  const reviews = Object.values(bySlot).sort((a, b) => a.slot - b.slot);
+  // The lowest signed score per slot counts, per stage; show the current stage first, then earlier ones.
+  const byStage = {};
+  for (const rev of d.reviews) {
+    const st = rev.stage ?? 0, slots = (byStage[st] ||= {});
+    if (!slots[rev.slot] || rev.score < slots[rev.slot].score) slots[rev.slot] = rev;
+  }
+  const stages = Object.keys(byStage).map(Number).sort((a, b) => b - a);
+  const reviews = stages.flatMap((st) => Object.values(byStage[st]).sort((a, b) => a.slot - b.slot));
+  const current = reviews.filter((x) => (x.stage ?? 0) === p.stage);
   app.innerHTML = `
     <p class="small"><a href="#/round/${p.round_id}">Round ${p.round_id}</a></p>
     <h1>${esc(p.title)}</h1>
     <p class="meta muted small">by ${esc(p.author)}. ${status(p)}.</p>
-    ${strip(reviews.map((x) => x.score), r.threshold)}
+    ${strip(current.map((x) => x.score), r.threshold)}
     <div class="proposal-body">${esc(p.body)}</div>
+    ${p.record ? `<p class="small muted">Applicant record when this stage opened, written by the contract: first seen ${p.record.days} days earlier, ${p.record.submitted} earlier proposals, ${p.record.passed} passed, ${p.record.delivered} milestones delivered.</p>` : ""}
+    ${p.evidence ? `<h2>Milestone ${p.stage} evidence</h2><div class="proposal-body">${esc(p.evidence)}</div>` : ""}
+    ${milestoneForm(p, r)}
     <h2>Reviews</h2>
-    <div id="reviews">${reviews.map((x) => `<div class="review" id="rev-${x.slot}"><div class="head">
-      <h3>${esc(x.model)}</h3><span class="score">${x.score}</span></div>
+    <div id="reviews">${reviews.map((x) => `<div class="review"><div class="head">
+      <h3>${esc(x.model)}${(x.stage ?? 0) > 0 ? `, milestone ${x.stage}` : (p.stage > 0 ? ", proposal review" : "")}</h3><span class="score">${x.score}</span></div>
       <p>${esc(reviewReason(x))}</p>${(x.flags || []).map((f) => `<span class="flag">${esc(f)}</span>`).join("")}
-      <p class="proof" data-slot="${x.slot}">Checking the signature in your browser…</p>
+      <p class="proof" data-key="${x.stage ?? 0}-${x.slot}">Checking the signature in your browser…</p>
       <details><summary>What was checked</summary><p>Your browser read this proposal, the round's rubric and the key registration directly from a NEAR RPC node, rebuilt the exact request, hashed it with SHA-256, and checked the model's ed25519 signature over <code>model:request-hash:response-hash</code> with key <code>${esc(x.public_key)}</code>, which the contract has registered for ${esc(x.model)}. The score shown is read from the signed answer.</p>
-      <p>Transaction <a href="https://testnet.nearblocks.io/txns/${esc(x.tx)}">${esc(x.tx)}</a></p><p class="hash" data-hashes="${x.slot}"></p></details></div>`).join("") || `<p class="muted">No reviews yet. The relayer picks new proposals up within a minute.</p>`}</div>`;
+      <p>Transaction <a href="https://testnet.nearblocks.io/txns/${esc(x.tx)}">${esc(x.tx)}</a></p><p class="hash" data-hashes="${x.stage ?? 0}-${x.slot}"></p></details></div>`).join("") || `<p class="muted">No reviews yet. The relayer picks new proposals up within a minute.</p>`}</div>`;
+  const mf = document.getElementById("milestone");
+  if (mf) mf.addEventListener("submit", (e) => { e.preventDefault(); submitMilestone(id, mf); });
   for (const x of reviews) {
     let res;
     try { res = await checkInBrowser(x, id); } catch (e) { res = { ok: false, why: e.message }; }
-    const el = document.querySelector(`.proof[data-slot="${x.slot}"]`);
+    const key = `${x.stage ?? 0}-${x.slot}`;
+    const el = document.querySelector(`.proof[data-key="${key}"]`);
     el.textContent = res.ok ? "Checked in your browser: signature, on-chain key and score" : `Check failed: ${res.why}`;
     el.classList.toggle("bad", !res.ok);
-    if (res.reqHash) document.querySelector(`[data-hashes="${x.slot}"]`).textContent = `request ${res.reqHash}, response ${res.respHash}`;
+    if (res.reqHash) document.querySelector(`[data-hashes="${key}"]`).textContent = `request ${res.reqHash}, response ${res.respHash}`;
   }
+}
+
+function milestoneForm(p, r) {
+  const canSubmit = p.finalized && p.outcome && p.outcome.passed && !p.completed && r.milestone_system &&
+    (p.dao_proposal_ids || []).length === p.stage + 1;
+  if (!canSubmit) return "";
+  return `<h2>Deliver milestone ${p.stage + 1}</h2>
+    <form id="milestone"><p class="small muted">Once DAO members approve the payout for this stage, the author can submit evidence of delivery: release links, commit hashes, deployed contract addresses, transaction ids. Three models review it against the original plan; if it passes, the next tranche goes to the DAO vote.</p>
+    <label for="ev">Evidence</label><textarea id="ev" name="evidence" maxlength="4000" required></textarea>
+    <p><button class="primary" type="submit">Submit milestone evidence</button> <span id="milestone-status" class="small muted"></span></p></form>`;
+}
+
+async function submitMilestone(proposalId, form) {
+  const out = document.getElementById("milestone-status");
+  try {
+    const c = await wallet();
+    if (!account) { out.textContent = "Connect the author's wallet first."; await c.connect(); return; }
+    out.textContent = "Confirm the transaction in your wallet.";
+    const w = await c.wallet();
+    await w.signAndSendTransaction({ receiverId: config.contract, actions: [{ type: "FunctionCall", params: {
+      methodName: "submit_milestone", args: { proposal_id: proposalId, evidence: form.evidence.value },
+      gas: "100000000000000", deposit: (NEAR / 10n).toString() } }] });
+    out.textContent = "Submitted. If the DAO approved the last payout, review starts within minutes; otherwise your deposit is refunded.";
+    setTimeout(() => route(), 4000);
+  } catch (e) { out.textContent = `Not submitted: ${e.message || e}`; }
 }
 
 function reviewReason(x) {

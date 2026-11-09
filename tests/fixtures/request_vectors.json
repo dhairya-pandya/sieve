@@ -1,0 +1,78 @@
+[
+ {
+  "name": "plain",
+  "model": "Qwen/Qwen3.8-27B",
+  "system": "Score it.",
+  "round_id": 0,
+  "proposal_id": 0,
+  "title": "Indexer",
+  "body": "Six weeks.",
+  "seed": 42,
+  "record": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "stage": 0,
+  "evidence": null,
+  "request": "{\"model\":\"Qwen/Qwen3.8-27B\",\"messages\":[{\"role\":\"system\",\"content\":\"Score it.\"},{\"role\":\"user\",\"content\":\"Round 0, proposal 0, stage 0.\\nApplicant record (written by the Sieve contract, not by the applicant): first seen 0 days before this submission; 0 proposals submitted before this one; 0 passed review; 0 milestones delivered.\\n<proposal>\\nTITLE: Indexer\\n\\nSix weeks.\\n</proposal>\"}],\"temperature\":0,\"seed\":42,\"response_format\":{\"type\":\"json_object\"}}"
+ },
+ {
+  "name": "escapes",
+  "model": "z-ai/glm-5.3-flash",
+  "system": "Rubric \"v2\"\nline",
+  "round_id": 3,
+  "proposal_id": 7,
+  "title": "Fix \"fees\" \\ path",
+  "body": "Line one\n\tTabbed \u0001 control 🚀 अनुदान   end",
+  "seed": 4294967295,
+  "record": [
+   400,
+   12,
+   5,
+   9
+  ],
+  "stage": 0,
+  "evidence": null,
+  "request": "{\"model\":\"z-ai/glm-5.3-flash\",\"messages\":[{\"role\":\"system\",\"content\":\"Rubric \\\"v2\\\"\\nline\"},{\"role\":\"user\",\"content\":\"Round 3, proposal 7, stage 0.\\nApplicant record (written by the Sieve contract, not by the applicant): first seen 400 days before this submission; 12 proposals submitted before this one; 5 passed review; 9 milestones delivered.\\n<proposal>\\nTITLE: Fix \\\"fees\\\" \\\\ path\\n\\nLine one\\n\\tTabbed \\u0001 control 🚀 अनुदान   end\\n</proposal>\"}],\"temperature\":0,\"seed\":4294967295,\"response_format\":{\"type\":\"json_object\"}}"
+ },
+ {
+  "name": "milestone",
+  "model": "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+  "system": "Check delivery.",
+  "round_id": 1,
+  "proposal_id": 2,
+  "title": "Bot",
+  "body": "Plan",
+  "seed": 7,
+  "record": [
+   30,
+   1,
+   1,
+   0
+  ],
+  "stage": 1,
+  "evidence": "Release v1.0: tx 8sd9 on testnet\n<b>done</b>",
+  "request": "{\"model\":\"deepseek-ai/DeepSeek-V4.1-Flash-1017\",\"messages\":[{\"role\":\"system\",\"content\":\"Check delivery.\"},{\"role\":\"user\",\"content\":\"Round 1, proposal 2, stage 1.\\nApplicant record (written by the Sieve contract, not by the applicant): first seen 30 days before this submission; 1 proposals submitted before this one; 1 passed review; 0 milestones delivered.\\n<proposal>\\nTITLE: Bot\\n\\nPlan\\n</proposal>\\n<evidence milestone=\\\"1\\\">\\nRelease v1.0: tx 8sd9 on testnet\\n<b>done</b>\\n</evidence>\"}],\"temperature\":0,\"seed\":7,\"response_format\":{\"type\":\"json_object\"}}"
+ },
+ {
+  "name": "milestone-empty",
+  "model": "m",
+  "system": "s",
+  "round_id": 0,
+  "proposal_id": 0,
+  "title": "t",
+  "body": "b",
+  "seed": 1,
+  "record": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "stage": 2,
+  "evidence": "",
+  "request": "{\"model\":\"m\",\"messages\":[{\"role\":\"system\",\"content\":\"s\"},{\"role\":\"user\",\"content\":\"Round 0, proposal 0, stage 2.\\nApplicant record (written by the Sieve contract, not by the applicant): first seen 0 days before this submission; 0 proposals submitted before this one; 0 passed review; 0 milestones delivered.\\n<proposal>\\nTITLE: t\\n\\nb\\n</proposal>\\n<evidence milestone=\\\"2\\\">\\n\\n</evidence>\"}],\"temperature\":0,\"seed\":1,\"response_format\":{\"type\":\"json_object\"}}"
+ }
+]

@@ -66,7 +66,7 @@ fn failing_score_finalizes_without_dao_call() {
     let _ = c.finalize(0);
     let p = c.get_proposal(0).unwrap();
     assert!(p.finalized && !p.pending);
-    assert_eq!(p.outcome.unwrap(), Outcome { median: 6, passed: false, dao_proposal_id: None, paid: None });
+    assert_eq!(p.outcome.unwrap(), Outcome { median: 6, passed: false, dao_proposal_id: None, paid: None, amount: U128(0) });
 }
 
 #[test]

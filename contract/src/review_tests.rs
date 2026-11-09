@@ -25,13 +25,19 @@ fn sign(c: &Sieve, k: &SigningKey, model: &str, pid: u64, slot: u8, resp: &[u8])
     hex(&k.sign(text.as_bytes()).to_bytes())
 }
 
-/// Three-model round with keys 1, 2, 3 registered (expiring at 1,000,000 ms) and one proposal submitted at 2,000 ms.
-pub(crate) fn three_model_round() -> Sieve {
+/// Three-model round with keys 1, 2, 3 registered (expiring at 1,000,000,000 ms), no proposals yet.
+pub(crate) fn three_model_round_without_proposal() -> Sieve {
     let mut c = setup_round(MODELS.iter().map(|m| m.to_string()).collect(), "rubric");
     ctx(0, 0, 1_500);
     for (i, m) in MODELS.iter().enumerate() {
-        c.register_signer(hex(key(i as u8 + 1).verifying_key().as_bytes()), m.to_string(), 1_000_000);
+        c.register_signer(hex(key(i as u8 + 1).verifying_key().as_bytes()), m.to_string(), 1_000_000_000);
     }
+    c
+}
+
+/// Three-model round with keys registered and one proposal submitted at 2,000 ms by accounts(1).
+pub(crate) fn three_model_round() -> Sieve {
+    let mut c = three_model_round_without_proposal();
     ctx(1, NEAR, 2_000);
     c.submit(0, "title".into(), "body".into());
     c

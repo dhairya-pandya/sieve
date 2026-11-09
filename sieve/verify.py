@@ -43,6 +43,20 @@ def check_review(event: dict, request: bytes, signers: dict[str, str]) -> str:
     return "OK"
 
 
+def local_request(event: dict, proposal: dict, round_: dict) -> bytes:
+    """Rebuild, independently of the contract, the request a review event answered, for whichever stage it was."""
+    stage = event.get("stage", 0)
+    if stage == proposal.get("stage", 0):
+        seed, record, evidence = proposal["seed"], proposal["record"], proposal.get("evidence")
+    else:
+        past = proposal["past"][stage]
+        seed, record, evidence = past["seed"], past["record"], past["evidence"]
+    system = round_["system"] if stage == 0 else round_["milestone_system"]
+    rec = (record["days"], record["submitted"], record["passed"], record["delivered"])
+    return build_request(event["model"], system, proposal["round_id"], event["proposal_id"], proposal["title"],
+                         proposal["body"], seed, record=rec, stage=stage, evidence=evidence)
+
+
 def _rpc(url: str, method: str, params) -> dict:
     r = httpx.post(url, json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params}, timeout=60)
     body = r.json()
@@ -101,8 +115,9 @@ def verify(contract: str, round_id: int | None = None) -> int:
             if e["public_key"] not in signers:
                 s = view(contract, "get_signer", {"public_key_hex": e["public_key"]})
                 signers[e["public_key"]] = s["model"] if s else ""
-            local = build_request(e["model"], r["system"], p["round_id"], e["proposal_id"], p["title"], p["body"], p["seed"])
-            onchain = base64.b64decode(view(contract, "review_request", {"proposal_id": e["proposal_id"], "slot": e["slot"]}))
+            local = local_request(e, p, r)
+            onchain = base64.b64decode(view(contract, "stage_request",
+                                            {"proposal_id": e["proposal_id"], "stage": e.get("stage", 0), "slot": e["slot"]}))
             status = "request differs from contract" if local != onchain else check_review(e, local, signers)
             failures += status != "OK"
             rows.append((e["proposal_id"], e["slot"], e["model"], e["score"], status, tx_hash))

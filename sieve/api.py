@@ -114,7 +114,7 @@ def create_app(chain: Chain, signals: Callable[[int, list], dict] = live_signals
         for e in chain.events():
             if e["proposal_id"] != proposal_id:
                 continue
-            request = chain.view("review_request", {"proposal_id": proposal_id, "slot": e["slot"]})
+            request = chain.view("stage_request", {"proposal_id": proposal_id, "stage": e.get("stage", 0), "slot": e["slot"]})
             if e["public_key"] not in signers:
                 s = chain.view("get_signer", {"public_key_hex": e["public_key"]})
                 signers[e["public_key"]] = s["model"] if s else ""
