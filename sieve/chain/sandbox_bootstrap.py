@@ -27,7 +27,7 @@ import httpx
 
 SANDBOX_VERSION = "2.14.0"
 BASE_URL = "https://s3-us-west-1.amazonaws.com/build.nearprotocol.com/nearcore"
-CACHE_DIR = Path(os.environ.get("REDSWARM_CACHE", Path.home() / ".cache" / "redswarm"))
+CACHE_DIR = Path(os.environ.get("SIEVE_CACHE", Path.home() / ".cache" / "sieve"))
 
 
 class SandboxUnavailable(RuntimeError):
@@ -107,7 +107,7 @@ class SandboxNode:
 
 def start_node(version: str = SANDBOX_VERSION) -> SandboxNode:
     binary = ensure_binary(version)
-    home = Path(tempfile.mkdtemp(prefix="redswarm-sandbox-"))
+    home = Path(tempfile.mkdtemp(prefix="sieve-sandbox-"))
     subprocess.run([binary, "--home", home, "init"], check=True, capture_output=True)
     rpc_port, net_port = _free_port(), _free_port()
     cfg_path = home / "config.json"

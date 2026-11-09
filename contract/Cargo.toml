@@ -1,5 +1,5 @@
 [package]
-name = "redswarm-escrow"
+name = "sieve"
 version = "0.1.0"
 edition = "2021"
 
@@ -8,7 +8,6 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 near-sdk = "5"
-sha2 = "0.10"
 
 [dev-dependencies]
 near-sdk = { version = "5", features = ["unit-testing"] }

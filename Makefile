@@ -1,22 +1,19 @@
 PY ?= .venv/bin/python
-WASM = contract/redswarm_escrow.wasm
+WASM = contract/sieve.wasm
 
-.PHONY: setup test test-all demo contract
+.PHONY: setup test test-all contract
 
 setup:
 	python3 -m venv .venv
-	.venv/bin/pip install -e '.[dev]'
+	.venv/bin/pip install -q -e '.[dev]'
 
 test:
-	$(PY) -m pytest -q -m 'not slow'
-	@if command -v cargo >/dev/null 2>&1; then cd contract && cargo test; else echo "cargo not found: skipping contract tests"; fi
+	$(PY) -m pytest -q
+	@if command -v cargo >/dev/null 2>&1; then cd contract && cargo test -q; else echo "cargo not found: skipping contract tests"; fi
 
 test-all:
-	$(PY) -m pytest -q
-
-demo:
-	$(PY) -m redswarm.demo.run_demo
+	$(PY) -m pytest -q -m ''
 
 contract:
 	cd contract && cargo build --target wasm32-unknown-unknown --release
-	cp contract/target/wasm32-unknown-unknown/release/redswarm_escrow.wasm $(WASM)
+	cp contract/target/wasm32-unknown-unknown/release/sieve.wasm $(WASM)

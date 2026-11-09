@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "redswarm"
+name = "sieve"
 version = "0.1.0"
-description = "Red-team bounty arena for AI agents that hold money, on NEAR"
+description = "A grant reviewer for NEAR DAOs whose AI reviews are verified on chain and measured against prompt injection"
 requires-python = ">=3.11"
 dependencies = [
   "fastapi",
@@ -15,21 +15,27 @@ dependencies = [
   "py-near",
   "pynacl",
   "base58",
-  "openai",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest", "pytest-asyncio"]
 
+[project.scripts]
+sieve = "sieve.cli:main"
+
 [tool.setuptools.packages.find]
-include = ["redswarm*"]
+include = ["sieve*"]
 
 [tool.setuptools.package-data]
-redswarm = ["arena/static/*.html", "demo/*.txt"]
+sieve = ["prompts/*.txt"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "module"
 asyncio_default_test_loop_scope = "module"
 testpaths = ["tests"]
-markers = ["slow: needs the local NEAR sandbox (about 4 minutes)"]
+addopts = "-m 'not slow and not live'"
+markers = [
+  "slow: needs the local NEAR sandbox",
+  "live: calls NEAR AI Cloud and needs NEAR_AI_API_KEY",
+]
