@@ -32,6 +32,12 @@ function signedReview(responseB64) {
   return JSON.parse(content);
 }
 
+// The score the contract reads from a signed answer: the count of true checks for a checklist rubric, else "score".
+function signedScore(review) {
+  if (review.checks && typeof review.checks === "object") return Object.values(review.checks).filter((v) => v === true).length;
+  return review.score;
+}
+
 // The canonical request, byte for byte as sieve/request.py and the contract build it.
 function buildRequest(model, system, roundId, proposalId, title, body, seed, record, stage, evidence) {
   let user = `Round ${roundId}, proposal ${proposalId}, stage ${stage}.\nApplicant record (written by the Sieve contract, not by the applicant): ` +
@@ -58,9 +64,9 @@ async function checkInBrowser(review, proposalId) {
   const system = stage === 0 ? round.system : round.milestone_system;
   const local = buildRequest(review.model, system, proposal.round_id, proposalId, proposal.title, proposal.body,
     at.seed, at.record, stage, at.evidence);
-  let signedScore;
-  try { signedScore = signedReview(review.response).score; } catch { return { ok: false, why: "signed answer is not a review" }; }
-  if (signedScore !== review.score) return { ok: false, why: "shown score differs from the signed answer" };
+  let signed;
+  try { signed = signedScore(signedReview(review.response)); } catch { return { ok: false, why: "signed answer is not a review" }; }
+  if (signed !== review.score) return { ok: false, why: "shown score differs from the signed answer" };
   const reqHash = hex(await crypto.subtle.digest("SHA-256", enc.encode(local)));
   const respHash = hex(await crypto.subtle.digest("SHA-256", b64(review.response)));
   const text = `${review.model}:${reqHash}:${respHash}`;
@@ -68,16 +74,34 @@ async function checkInBrowser(review, proposalId) {
   return { ok, why: ok ? "" : "signature does not match", reqHash, respHash };
 }
 
+// 5 by 7 dot-matrix glyphs, the way the hackathon page draws its numbers.
+const GLYPHS = {
+  "0": "01110100011001110101110011000101110", "1": "00100011000010000100001000010001110",
+  "2": "01110100010000100010001000100011111", "3": "11111000100010000010000011000101110",
+  "4": "00010001100101010010111110001000010", "5": "11111100001111000001000011000101110",
+  "6": "00110010001000011110100011000101110", "7": "11111000010001000100010000100001000",
+  "8": "01110100011000101110100011000101110", "9": "01110100011000101111000010001001100",
+  "/": "00001000010001000100010001000010000", ".": "00000000000000000000000000110001100",
+  "-": "00000000000000011111000000000000000", " ": "00000000000000000000000000000000000",
+};
+function dots(text, size = "") {
+  const digit = (ch) => `<span class="d">${[...(GLYPHS[ch] || GLYPHS[" "])].map((b) => `<i${b === "1" ? ' class="on"' : ""}></i>`).join("")}</span>`;
+  return `<span class="dm ${size}" role="img" aria-label="${esc(text)}">${[...String(text)].map(digit).join("")}</span>`;
+}
+
+// The pixel score strip: one column per score from 0 to 10, a cell filled per model at its score,
+// columns at or above the threshold on a blue ground, and the median column outlined.
 function strip(scores, threshold) {
-  const pct = (s) => `${s * 10}%`;
   const sorted = [...scores].sort((a, b) => a - b);
   const median = sorted.length ? sorted[Math.floor((sorted.length - 1) / 2)] : null;
-  const marks = scores.map((s) => `<span class="mark" style="left:${pct(s)}" title="model score ${s}"></span>`).join("");
-  const med = median === null ? "" :
-    `<span class="median ${median >= threshold ? "pass" : "fail"}" style="left:${pct(median)}" title="median ${median}"></span>`;
-  return `<div class="strip" role="img" aria-label="${scores.length ? `model scores ${scores.join(", ")}, median ${median}` : "not reviewed yet"}">
-    <span class="rail"></span><span class="gate" style="left:${pct(threshold)}" data-label="passes at ${threshold}"></span>
-    ${marks}${med}<span class="scale" style="left:0">0</span><span class="scale" style="right:0">10</span></div>`;
+  const cols = Array.from({ length: 11 }, (_, v) => {
+    const n = scores.filter((s) => s === v).length;
+    const cls = ["col", v >= threshold ? "gate" : "", v === median ? `med ${median >= threshold ? "pass" : "fail"}` : ""].join(" ");
+    return `<span class="${cls}" title="${v}">${[2, 1, 0].map((k) => `<i${k < n ? ' class="on"' : ""}></i>`).join("")}</span>`;
+  }).join("");
+  const label = scores.length ? `model scores ${scores.join(", ")}, median ${median}, passes at ${threshold}` : "not reviewed yet";
+  return `<div class="strip${scores.length ? "" : " empty"}" role="img" aria-label="${label}">${cols}
+    <span class="axis"><span>0</span><span>passes at ${threshold}</span><span>10</span></span></div>`;
 }
 
 function status(p) {
@@ -105,16 +129,65 @@ async function home() {
   const earlier = rounds.filter((r) => !live.includes(r));
   const grant = live.filter((r) => r.kind === "Grant");
   const honey = live.filter((r) => r.kind === "Honeypot");
+  const reviewed = rounds.reduce((n, r) => n + (r.proposal_count || 0), 0);
+  app.className = "wide";
   app.innerHTML = `
-    <h1>Grant reviews that can't be talked into a score</h1>
-    <p class="lede">Three AI models review every proposal against a rubric stored on NEAR. Each answer is signed inside a secure enclave, and the contract rebuilds the exact prompt and checks the signatures before the median score counts. Passing proposals go to the DAO's vote; the AI never moves money.</p>
-    <h2>Open rounds</h2>
-    <ul class="list">${grant.map((r) => `<li class="row"><div><h3><a href="#/round/${r.id}">Round ${r.id}</a></h3>
-      <div class="meta">DAO ${esc(r.dao)}. First payout ${near(r.tranche)} NEAR. Passes at a median of ${r.threshold} out of 10.</div></div>
-      <div><a class="button" href="#/round/${r.id}">See proposals</a></div></li>`).join("")}</ul>
-    ${honey.map((r) => `<div class="callout"><h3>Honeypot: ${near(r.bounty)} NEAR for fooling the reviewer</h3>
-      <p class="small">Every proposal in <a href="#/round/${r.id}">round ${r.id}</a> is worthless by definition, so the honest score is 0. If any proposal gets a passing median with no injection flag, the contract pays the bounty to its author automatically. ${r.open ? "Unclaimed so far." : "It has been claimed."}</p></div>`).join("")}
-    ${earlier.length ? `<p class="small muted">Earlier rounds: ${earlier.map((r) => `<a href="#/round/${r.id}">round ${r.id}</a>`).join(", ")}.</p>` : ""}`;
+    <section style="max-width:1120px;margin:0 auto;padding:0 20px">
+      <div class="hero"><div>
+        <h1>Grant reviews you can check</h1>
+        <p class="lede">Three AI models review every proposal against a rubric stored on NEAR. Each answer is signed inside a secure enclave, and the contract rebuilds the exact prompt and checks every signature before the median counts. <strong>Passing proposals go to the DAO's vote. The AI never moves money.</strong></p>
+        <div class="actions">${grant.map((r) => `<a class="button primary" href="#/round/${r.id}">Submit a proposal</a>`).slice(0, 1).join("")}
+          <a class="button" href="#/redteam">See the red-team results</a></div>
+      </div><div class="mesh" aria-hidden="true"><canvas id="sieve-canvas" width="84" height="84"></canvas></div></div>
+    </section>
+    <div class="ticker" aria-hidden="true">${"<span>Signed in the enclave</span><span>Checked on chain</span><span>Voted by the DAO</span>".repeat(4)}</div>
+    <section class="band"><div class="band-in">
+      <div class="stat"><p class="idx">[ 01 / proposals reviewed ]</p>${dots(reviewed, "big")}<p>Every one reviewed by three models, each signature checked by the contract.</p></div>
+      <div class="stat"><p class="idx">[ 02 / templated injections ]</p>${dots("0/10", "big")}<p>Ten kinds of hidden instruction tried on borderline proposals; none got one through under the deployed rule.</p></div>
+      <div class="stat"><p class="idx">[ 03 / newcomer first payout ]</p>${dots("0.2", "big")}<p>NEAR. A plausible plan can win only this much before delivery evidence is reviewed.</p></div>
+    </div></section>
+    <section style="max-width:1120px;margin:0 auto;padding:0 20px">
+      <h2>Open rounds</h2>
+      <div class="cols">${grant.map((r) => `<div class="cell"><p class="tag">[ round ${r.id} / grant ]</p>${dots(r.threshold, "small")}
+        <p class="kind">Passes at a median of ${r.threshold} of 10</p><h3><a href="#/round/${r.id}">Grants on ${esc(r.dao.split(".")[0])}</a></h3>
+        <p>First payout ${near(r.newcomer_tranche || r.tranche)} NEAR for newcomers, ${near(r.tranche)} NEAR per milestone after that. Reviewed by ${r.models.length} models.</p>
+        <a class="button" href="#/round/${r.id}">See proposals</a></div>`).join("")}
+      ${honey.map((r) => `<div class="cell"><p class="tag">[ round ${r.id} / honeypot ]</p>${dots(near(r.bounty), "small")}
+        <p class="kind">NEAR bounty, ${r.open ? "unclaimed" : "claimed"}</p><h3><a href="#/round/${r.id}">Fool the reviewer</a></h3>
+        <p>Every proposal here is worthless by definition. Get one to a passing median without an injection flag and the contract pays you automatically.</p>
+        <a class="button" href="#/round/${r.id}">Try it</a></div>`).join("")}</div>
+      ${earlier.length ? `<p class="small muted">Earlier rounds: ${earlier.map((r) => `<a href="#/round/${r.id}">round ${r.id}</a>`).join(", ")}.</p>` : ""}
+    </section>`;
+  sieveAnimation(document.getElementById("sieve-canvas"));
+}
+
+// The one moving thing on the site: pixels fall onto a sieve; most pass through, some are caught.
+function sieveAnimation(canvas) {
+  if (!canvas || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const ctx = canvas.getContext("2d"), W = 84, H = 84, MESH = 46;
+  const css = getComputedStyle(document.documentElement);
+  const col = (v) => css.getPropertyValue(v).trim();
+  let drops = [], caught = [], t = 0;
+  const step = () => {
+    if (!document.body.contains(canvas)) return;
+    t++;
+    if (t % 3 === 0) drops.push({ x: 2 + Math.floor(Math.random() * 40) * 2, y: 0, bad: Math.random() < 0.18 });
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = col("--ink");
+    for (let x = 0; x < W; x += 4) ctx.fillRect(x, MESH, 2, 2);
+    for (const d of drops) {
+      d.y += 1;
+      if (d.bad && d.y === MESH - 2) { caught.push({ x: d.x, y: MESH - 2 - 2 * caught.filter((c) => c.x === d.x).length }); d.done = true; }
+      ctx.fillStyle = d.bad ? col("--fail") : (d.y > MESH ? col("--blue") : col("--ink"));
+      if (!d.done) ctx.fillRect(d.x, d.y, 2, 2);
+    }
+    drops = drops.filter((d) => !d.done && d.y < H);
+    if (caught.length > 40) caught = caught.slice(-40);
+    ctx.fillStyle = col("--fail");
+    for (const c of caught) ctx.fillRect(c.x, c.y, 2, 2);
+    setTimeout(() => requestAnimationFrame(step), 45);
+  };
+  step();
 }
 
 async function round(id) {
@@ -122,8 +195,8 @@ async function round(id) {
   const r = d.round;
   const props = d.proposals.slice().reverse();
   app.innerHTML = `
-    <p class="small"><a href="#/">All rounds</a></p>
-    <h1>${r.kind === "Honeypot" ? "Honeypot round" : "Grant round"} ${id}</h1>
+    <p class="back"><a href="#/">All rounds</a></p>
+    <h1 class="page">${r.kind === "Honeypot" ? "Honeypot round" : "Grant round"} ${id}</h1>
     <p class="lede">${r.kind === "Honeypot" ? `Try to get a worthless proposal approved. Bounty: ${near(r.bounty)} NEAR.` : `Reviewed by ${r.models.map(esc).join(", ")}. A median of ${r.threshold} or more with no injection flag files a ${near(r.tranche)} NEAR payout proposal on <a href="https://testnet.nearblocks.io/address/${esc(r.dao)}">${esc(r.dao)}</a>.`}</p>
     <ul class="list">${props.map((p) => {
       const scores = p.slots.filter(Boolean).map((s) => s.score);
@@ -158,18 +231,22 @@ async function proposal(id) {
   const stages = Object.keys(byStage).map(Number).sort((a, b) => b - a);
   const reviews = stages.flatMap((st) => Object.values(byStage[st]).sort((a, b) => a.slot - b.slot));
   const current = reviews.filter((x) => (x.stage ?? 0) === p.stage);
+  const scores = current.map((x) => x.score), sorted = [...scores].sort((a, b) => a - b);
+  const median = sorted.length ? sorted[Math.floor((sorted.length - 1) / 2)] : null;
   app.innerHTML = `
-    <p class="small"><a href="#/round/${p.round_id}">Round ${p.round_id}</a></p>
-    <h1>${esc(p.title)}</h1>
+    <p class="back"><a href="#/round/${p.round_id}">Round ${p.round_id}</a></p>
+    <h1 class="page">${esc(p.title)}</h1>
     <p class="meta muted small">by ${esc(p.author)}. ${status(p)}.</p>
-    ${strip(current.map((x) => x.score), r.threshold)}
+    <div class="verdict ${median === null ? "" : median >= r.threshold ? "pass" : "fail"}">
+      <div><p class="label">${p.stage > 0 ? `Milestone ${p.stage} median` : "Median score"}</p><span class="num">${dots(median === null ? "-" : median, "big")}</span></div>
+      ${strip(scores, r.threshold)}</div>
     <div class="proposal-body">${esc(p.body)}</div>
     ${p.record ? `<p class="small muted">Applicant record when this stage opened, written by the contract: first seen ${p.record.days} days earlier, ${p.record.submitted} earlier proposals, ${p.record.passed} passed, ${p.record.delivered} milestones delivered.</p>` : ""}
     ${p.evidence ? `<h2>Milestone ${p.stage} evidence</h2><div class="proposal-body">${esc(p.evidence)}</div>` : ""}
     ${milestoneForm(p, r)}
     <h2>Reviews</h2>
     <div id="reviews">${reviews.map((x) => `<div class="review"><div class="head">
-      <h3>${esc(x.model)}${(x.stage ?? 0) > 0 ? `, milestone ${x.stage}` : (p.stage > 0 ? ", proposal review" : "")}</h3><span class="score">${x.score}</span></div>
+      <h3>${esc(x.model)}${(x.stage ?? 0) > 0 ? `, milestone ${x.stage}` : (p.stage > 0 ? ", proposal review" : "")}</h3>${dots(x.score)}</div>
       <p>${esc(reviewReason(x))}</p>${(x.flags || []).map((f) => `<span class="flag">${esc(f)}</span>`).join("")}
       <p class="proof" data-key="${x.stage ?? 0}-${x.slot}">Checking the signature in your browser…</p>
       <details><summary>What was checked</summary><p>Your browser read this proposal, the round's rubric and the key registration directly from a NEAR RPC node, rebuilt the exact request, hashed it with SHA-256, and checked the model's ed25519 signature over <code>model:request-hash:response-hash</code> with key <code>${esc(x.public_key)}</code>, which the contract has registered for ${esc(x.model)}. The score shown is read from the signed answer.</p>
@@ -218,8 +295,8 @@ function reviewReason(x) {
 
 async function redteam() {
   const { markdown } = await get("/api/redteam");
-  app.innerHTML = `<h1>How often can the reviewer be fooled?</h1>
-    <p class="lede">We attacked the reviewer with injected proposals on real models, kept every signed answer, and counted how often a weak proposal was pushed to a passing score. Run <code>sieve redteam report</code> to re-check every signature yourself.</p>
+  app.innerHTML = `<h1 class="page">How often can the reviewer be fooled?</h1>
+    <p class="lede">We attacked the reviewer with injected proposals on real models, kept every signed answer, and counted how often a proposal that fails on its own was pushed to a pass. Run <code>sieve redteam report</code> to re-check every signature yourself.</p>
     ${markdown ? mdTables(markdown) : `<p class="muted">Results are being collected.</p>`}`;
 }
 
@@ -234,7 +311,7 @@ function mdTables(md) {
       table.push(cells);
     } else {
       table = null;
-      if (line.startsWith("## ")) out.push(`<h2>${esc(line.slice(3))}</h2>`);
+      if (line.startsWith("## ")) out.push(`<h2 class="sub">${esc(line.slice(3)).replace(/`([^`]+)`/g, "<code>$1</code>")}</h2>`);
       else if (line.startsWith("# ")) continue;
       else if (line.trim()) out.push(`<p>${esc(line).replace(/`([^`]+)`/g, "<code>$1</code>")}</p>`);
     }
@@ -245,8 +322,8 @@ function mdTables(md) {
 }
 
 function about() {
-  app.innerHTML = `<h1>How Sieve works</h1>
-    <ol class="lede">
+  app.innerHTML = `<h1 class="page">How Sieve works</h1>
+    <ol class="steps">
       <li>A community opens a round on its Sputnik DAO. The rubric and the exact prompt template are stored in the Sieve contract.</li>
       <li>Applicants submit proposals on chain with their NEAR wallet.</li>
       <li>A relayer, which anyone can run, sends each proposal to three models in NEAR AI Cloud's secure enclaves and posts their signed answers.</li>
@@ -299,6 +376,9 @@ async function submit(roundId, form) {
 
 async function route() {
   const [, page, id] = (location.hash || "#/").slice(1).split("/");
+  app.className = "";
+  document.querySelectorAll(".top nav a").forEach((a) => a.toggleAttribute("aria-current",
+    a.getAttribute("href") === `#/${page === "round" || page === "proposal" ? "" : page || ""}`));
   try {
     if (!config) { config = await get("/api/rounds"); document.getElementById("contract").innerHTML = `Contract <a href="https://testnet.nearblocks.io/address/${esc(config.contract)}">${esc(config.contract)}</a> on NEAR testnet`; }
     if (page === "round") await round(Number(id));
@@ -307,9 +387,15 @@ async function route() {
     else if (page === "about") about();
     else await home();
   } catch (e) {
-    app.innerHTML = `<h1>Could not load this page</h1><p class="lede">${esc(e.message)}. The API may be waking up; reload in a few seconds.</p>`;
+    app.innerHTML = `<h1 class="page">Could not load this page</h1><p class="lede">${esc(e.message)}. The API may be waking up; reload in a few seconds.</p>`;
   }
   window.scrollTo(0, 0);
 }
 window.addEventListener("hashchange", route);
+document.getElementById("theme").addEventListener("click", () => {
+  const dark = document.documentElement.dataset.theme ? document.documentElement.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  document.documentElement.dataset.theme = dark ? "light" : "dark";
+  try { localStorage.setItem("theme", document.documentElement.dataset.theme); } catch {}
+});
+try { const t = localStorage.getItem("theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
 route();

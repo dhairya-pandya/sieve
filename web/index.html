@@ -5,20 +5,24 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sieve: grant reviews you can check</title>
 <meta name="description" content="AI grant reviews for NEAR DAOs, signed by models in secure enclaves and verified on chain.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 5 5' shape-rendering='crispEdges'%3E%3Cpath fill='%23005FB0' d='M0 0h5v1H0zM0 2h1v1H0zM2 2h1v1H2zM4 2h1v1H4zM1 4h1v1H1zM3 4h1v1H3z'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@400;500;600;700&family=Literata:opsz,wght@7..72,400;7..72,600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Pixelify+Sans:wght@500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/tweetnacl/1.0.3/nacl-fast.min.js"></script>
 </head>
 <body>
-<header class="top">
-  <a class="brand" href="#/">Sieve</a>
-  <nav><a href="#/">Rounds</a><a href="#/redteam">Red-team results</a><a href="#/about">How it works</a></nav>
+<header class="top"><div class="top-in">
+  <a class="brand" href="#/" aria-label="Sieve home">
+    <svg width="22" height="22" viewBox="0 0 5 5" shape-rendering="crispEdges" aria-hidden="true"><path fill="currentColor" d="M0 0h5v1H0zM0 2h1v1H0zM2 2h1v1H2zM4 2h1v1H4z"/><path fill="#0091FD" d="M1 4h1v1H1zM3 4h1v1H3z"/></svg>
+    Sieve</a>
+  <nav><a href="#/">Rounds</a><a href="#/redteam">Red-team</a><a href="#/about">How it works</a></nav>
+  <button id="theme" class="theme" type="button" aria-label="Switch light or dark">◐</button>
   <button id="wallet" class="wallet" type="button">Connect wallet</button>
-</header>
+</div></header>
 <main id="app" aria-live="polite"><p class="muted">Loading rounds from NEAR testnet…</p></main>
-<footer class="foot"><span id="contract"></span></footer>
+<footer class="foot"><div class="foot-in"><span id="contract"></span><span>Built for the NEAR Hackathon, November 2026. Code on <a href="https://github.com/dhairya-pandya/sieve">GitHub</a>.</span></div></footer>
 <script src="config.js"></script>
 <script type="module" src="app.js"></script>
 </body>

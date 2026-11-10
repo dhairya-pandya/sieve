@@ -26,3 +26,22 @@ def test_browser_builder_matches_vectors():
     out = subprocess.run(["node", "-e", SCRIPT, str(ROOT / "web" / "app.js"), str(ROOT / "tests" / "fixtures" / "request_vectors.json")],
                          capture_output=True, text=True)
     assert out.stdout.strip().endswith("OK"), out.stdout + out.stderr
+
+
+SCORE_SCRIPT = r"""
+const fs = require("fs");
+const src = fs.readFileSync(process.argv[1], "utf8");
+eval(src.match(/function signedScore[\s\S]*?\n}\n/)[0]);
+const out = [
+  signedScore({ score: 6, flags: [] }),
+  signedScore({ checks: { a: true, b: false, c: true, d: true }, flags: [] }),
+];
+console.log(JSON.stringify(out));
+"""
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="needs node")
+def test_browser_reads_checklist_answers_like_the_contract():
+    # The contract scores a checklist answer by counting true checks; the browser check must do the same.
+    out = subprocess.run(["node", "-e", SCORE_SCRIPT, str(ROOT / "web" / "app.js")], capture_output=True, text=True)
+    assert out.stdout.strip() == "[6,3]", out.stdout + out.stderr
