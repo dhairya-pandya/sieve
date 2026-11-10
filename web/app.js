@@ -132,7 +132,7 @@ async function home() {
   const reviewed = rounds.reduce((n, r) => n + (r.proposal_count || 0), 0);
   app.className = "wide";
   app.innerHTML = `
-    <section style="max-width:1120px;margin:0 auto;padding:0 20px">
+    <section class="section">
       <div class="hero"><div>
         <h1>Grant reviews you can check</h1>
         <p class="lede">Three AI models review every proposal against a rubric stored on NEAR. Each answer is signed inside a secure enclave, and the contract rebuilds the exact prompt and checks every signature before the median counts. <strong>Passing proposals go to the DAO's vote. The AI never moves money.</strong></p>
@@ -146,7 +146,7 @@ async function home() {
       <div class="stat"><p class="idx">[ 02 / templated injections ]</p>${dots("0/10", "big")}<p>Ten kinds of hidden instruction tried on borderline proposals; none got one through under the deployed rule.</p></div>
       <div class="stat"><p class="idx">[ 03 / newcomer first payout ]</p>${dots("0.2", "big")}<p>NEAR. A plausible plan can win only this much before delivery evidence is reviewed.</p></div>
     </div></section>
-    <section style="max-width:1120px;margin:0 auto;padding:0 20px">
+    <section class="section">
       <h2>Open rounds</h2>
       <div class="cols">${grant.map((r) => `<div class="cell"><p class="tag">[ round ${r.id} / grant ]</p>${dots(r.threshold, "small")}
         <p class="kind">Passes at a median of ${r.threshold} of 10</p><h3><a href="#/round/${r.id}">Grants on ${esc(r.dao.split(".")[0])}</a></h3>

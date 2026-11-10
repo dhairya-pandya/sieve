@@ -20,6 +20,12 @@ for (const [name, path, scheme, size] of pages) {
   const page = await browser.newPage({ viewport: size || { width: 1920, height: 1080 }, deviceScaleFactor: 1, colorScheme: scheme });
   await page.goto(base + path);
   await page.waitForFunction(() => !document.querySelector("#app")?.textContent.includes("Loading"), null, { timeout: 30000 });
+  // The review list comes from an indexer that can briefly return nothing; reload until reviews show.
+  for (let tries = 0; path.includes("proposal") && tries < 4 && !(await page.$(".review")); tries++) {
+    await page.waitForTimeout(3000);
+    await page.reload();
+    await page.waitForFunction(() => !document.querySelector("#app")?.textContent.includes("Loading"), null, { timeout: 30000 });
+  }
   if (path.includes("proposal")) {
     await page.waitForFunction(() => ![...document.querySelectorAll(".proof")].some((p) => p.textContent.includes("Checking")), null, { timeout: 60000 }).catch(() => {});
   }

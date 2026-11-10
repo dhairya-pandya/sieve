@@ -2,6 +2,10 @@ import base64
 import json
 from pathlib import Path
 
+import httpx
+import pytest
+
+import sieve.verify as verify_module
 from sieve.verify import check_review
 
 F = json.loads((Path(__file__).parent / "fixtures" / "signed_review.json").read_text())
@@ -70,3 +74,36 @@ def test_events_reject_arguments_that_do_not_match_the_logged_hash():
     event = {"proposal_id": 0, "slot": 0, "model": "m", "score": 1, "response_hash": "00" * 32}
     [e] = events_from_tx(_tx(event, {"proposal_id": 0, "slot": 0, "response": F["response_b64"]}))
     assert e["response"] is None
+
+
+class _Resp:
+    def __init__(self, status, body):
+        self.status_code, self._body = status, body
+
+    def json(self):
+        return self._body
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise httpx.HTTPStatusError(str(self.status_code), request=None, response=None)
+
+
+def test_review_transactions_raises_when_rate_limited(monkeypatch):
+    # A rate-limited indexer must not read as "no reviews": the page would tell visitors nothing was reviewed.
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: _Resp(429, {"message": "You have exceeded your API request limit."}))
+    monkeypatch.setattr(verify_module.time, "sleep", lambda s: None)
+    with pytest.raises(httpx.HTTPStatusError):
+        verify_module.review_transactions("sieve.testnet")
+
+
+def test_review_transactions_retries_after_a_rate_limit(monkeypatch):
+    calls = []
+    ok = {"data": [{"transaction_hash": "h1", "signer_account_id": "r.testnet", "outcomes": {"status": True},
+                    "actions": [{"method": "post_review"}]}]}
+
+    def get(*a, **k):
+        calls.append(1)
+        return _Resp(429, {}) if len(calls) == 1 else _Resp(200, ok)
+    monkeypatch.setattr(httpx, "get", get)
+    monkeypatch.setattr(verify_module.time, "sleep", lambda s: None)
+    assert verify_module.review_transactions("sieve.testnet") == [("h1", "r.testnet")]

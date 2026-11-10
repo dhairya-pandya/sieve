@@ -12,6 +12,7 @@ import base64
 import hashlib
 import os
 import json
+import time
 
 import httpx
 from nacl.exceptions import BadSignatureError
@@ -75,6 +76,17 @@ def view(contract: str, method: str, args: dict | None = None):
     return json.loads(bytes(res["result"]))
 
 
+def _nearblocks(url: str, params: dict, tries: int = 4) -> dict:
+    """GET from NearBlocks, waiting out its rate limit (HTTP 429) a few times before giving up with an error."""
+    for attempt in range(tries):
+        r = httpx.get(url, params=params, timeout=60)
+        if r.status_code != 429 or attempt == tries - 1:
+            r.raise_for_status()
+            return r.json()
+        time.sleep(5 * (attempt + 1))
+    raise AssertionError("unreachable")
+
+
 def review_transactions(contract: str) -> list[tuple[str, str]]:
     """(tx hash, signer) of every successful post_review call, oldest first, from NearBlocks."""
     out, cursor = [], None
@@ -82,7 +94,7 @@ def review_transactions(contract: str) -> list[tuple[str, str]]:
         params = {"limit": 100, "method": "post_review"}
         if cursor:
             params["cursor"] = cursor
-        d = httpx.get(f"{NEARBLOCKS}/accounts/{contract}/txns", params=params, timeout=60).json()
+        d = _nearblocks(f"{NEARBLOCKS}/accounts/{contract}/txns", params)
         for t in d.get("data") or []:
             if t.get("outcomes", {}).get("status") and any(a.get("method") == "post_review" for a in t.get("actions", [])):
                 out.append((t["transaction_hash"], t["signer_account_id"]))
