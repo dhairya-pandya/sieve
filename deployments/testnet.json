@@ -4,7 +4,7 @@
   "operator": "redswarm-dhairya.testnet",
   "dao": "sieve-demo.sputnikv2.testnet",
   "rounds": {
-    "grant": 0,
+    "grant": 2,
     "honeypot": 1
   },
   "signers": {

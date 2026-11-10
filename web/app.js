@@ -251,7 +251,7 @@ function about() {
       <li>Applicants submit proposals on chain with their NEAR wallet.</li>
       <li>A relayer, which anyone can run, sends each proposal to three models in NEAR AI Cloud's secure enclaves and posts their signed answers.</li>
       <li>The contract rebuilds the exact prompt, checks each model's signature with a key registered after checking the enclave's attestation, and reads the score from the signed answer. During the review window (an hour in the current rounds) anyone can post a lower signed score for the same prompt, so cherry-picking a lucky answer does not help.</li>
-      <li>The rubric is ten yes/no checks, and the contract counts the "yes" answers itself, so extra detail cannot stretch a score. Each request includes the applicant's record, written by the contract: how long it has known them, their earlier proposals, and milestones delivered. Claims in the proposal about the past earn nothing.</li>
+      <li>Each request includes the applicant's record, written by the contract: how long it has known them, their earlier proposals, and milestones delivered. Claims in the proposal about the past cannot replace it.</li>
       <li>The median of the three scores decides. If it passes and no model flagged an injection attempt, the contract files a payout proposal on the DAO for members to vote on. Applicants who have never delivered a milestone get a smaller first tranche.</li>
       <li>After members approve a tranche, the author submits delivery evidence. The contract checks with the DAO that the payout was approved, then the evidence gets its own three-model review against the original plan. Passing counts a delivered milestone and files the next tranche.</li>
     </ol>

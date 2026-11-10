@@ -28,7 +28,7 @@
 | DAO call fails | The bond is returned to the round and `finalize` can be retried; nothing is marked final |
 | One signature filling two slots | A round's models must be distinct; each slot's request names its model |
 | Review data draining the contract | Storage for every review slot is reserved and paid at submit; only known flags are stored |
-| Padding a proposal with plausible detail to stretch the score | The rubric is ten yes/no checks and the contract counts the "yes" answers itself, so each check is worth one point however much text supports it |
+| Padding a proposal with plausible detail to stretch the score | Not prevented by the rubric. A checklist the contract counts was tried and measured: an attacker that retries still passed 12 of 15, and honest proposals passed only 3 of 20, so the demo round uses the 0-to-10 rubric. What limits the damage is the 0.2 NEAR newcomer tranche, evidence review before each later tranche, and the DAO vote |
 | Fake track record ("our last grant reached 5,000 users") | The applicant's record (first seen, earlier proposals, passed, milestones delivered) is written into every request by the contract; the rubric tells the model to give in-proposal claims about the past no weight, and the track-record check can only be ticked from the contract's record |
 | A proposal that only looks good on paper | Newcomers get a small first tranche; each later tranche needs delivery evidence that passes its own three-model review, opened only after the contract confirms with the DAO that members approved the previous payout |
 | Double payout | `finalize` runs once per proposal; the honeypot round closes when its bounty is paid |

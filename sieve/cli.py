@@ -16,6 +16,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--operator", required=True, help="funded testnet account with a key in ~/.near-credentials/testnet")
     p.add_argument("--name", default="sieve", help="sub-account name for the contract")
     p.add_argument("--dao", default="sieve-demo", help="Sputnik DAO name")
+    p = sub.add_parser("round", help="open a new grant round on the deployed contract")
+    p.add_argument("--operator", required=True)
     p = sub.add_parser("redteam", help="attack the reviewer and report manipulation rates")
     rs = p.add_subparsers(dest="redteam_command", required=True)
     r = rs.add_parser("run", help="run attacks on real models (needs NEAR_AI_API_KEY)")
@@ -38,6 +40,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.command == "round":
+        from sieve.setup import add_grant_round
+        asyncio.run(add_grant_round(args.operator))
+        return 0
     if args.command == "setup":
         from sieve.setup import setup
         asyncio.run(setup(args.operator, args.name, args.dao))

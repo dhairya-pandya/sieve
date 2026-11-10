@@ -31,6 +31,34 @@ def deployment(network: str = "testnet") -> dict:
     return json.loads((DEPLOYMENTS / f"{network}.json").read_text())
 
 
+async def grant_round(near, operator: str, contract: str, dao: str) -> int:
+    """Open a grant round on the hardened 0-to-10 rubric, with milestone payouts.
+
+    The checklist rubric (grant_v2) passed only 3 of 20 good proposals in the red-team, so new rounds use grant_v1.
+    """
+    grant = await near.call(operator, contract, "create_round", {
+        "kind": "Grant", "dao": dao, "system": prompt("grant_v1"), "models": list(REVIEW_MODELS), "threshold": 7,
+        "tranche": str(NEAR), "dao_bond": str(DAO_BOND), "window_ms": 3_600_000}, deposit=NEAR)
+    # Three tranches of 1 NEAR; an applicant with no delivered milestone gets 0.2 NEAR first.
+    await near.call(operator, contract, "set_milestones", {
+        "round_id": grant, "milestone_system": prompt("milestone_v1"), "newcomer_tranche": str(NEAR // 5), "tranches": 3})
+    return grant
+
+
+async def add_grant_round(operator: str) -> int:
+    """Open a new grant round on the deployed contract and make it the current one."""
+    d = deployment()
+    near = await Near.testnet(operator)
+    try:
+        grant = await grant_round(near, operator, d["contract"], d["dao"])
+    finally:
+        await near.close()
+    d["rounds"]["grant"] = grant
+    (DEPLOYMENTS / "testnet.json").write_text(json.dumps(d, indent=2) + "\n")
+    print(json.dumps(d["rounds"]))
+    return grant
+
+
 async def setup(operator: str, name: str = "sieve", dao_name: str = "sieve-demo") -> dict:
     near = await Near.testnet(operator)
     try:
@@ -55,12 +83,7 @@ async def setup(operator: str, name: str = "sieve", dao_name: str = "sieve-demo"
         print(f"dao {dao}")
 
         models = list(REVIEW_MODELS)
-        grant = await near.call(operator, contract, "create_round", {
-            "kind": "Grant", "dao": dao, "system": prompt("grant_v2"), "models": models, "threshold": 7,
-            "tranche": str(NEAR), "dao_bond": str(DAO_BOND), "window_ms": 3_600_000}, deposit=NEAR)
-        # Three tranches of 1 NEAR; an applicant with no delivered milestone gets 0.2 NEAR first.
-        await near.call(operator, contract, "set_milestones", {
-            "round_id": grant, "milestone_system": prompt("milestone_v1"), "newcomer_tranche": str(NEAR // 5), "tranches": 3})
+        grant = await grant_round(near, operator, contract, dao)
         honeypot = await near.call(operator, contract, "create_round", {
             "kind": "Honeypot", "dao": dao, "system": prompt("honeypot_v1"), "models": models, "threshold": 7,
             "tranche": "0", "dao_bond": "0", "window_ms": 3_600_000}, deposit=2 * NEAR)
