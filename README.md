@@ -4,6 +4,8 @@ Sieve is a grant reviewer for NEAR DAOs that cannot be quietly changed or talked
 
 Built for the NEAR Hackathon (1 to 14 November 2026), tracks **Social Money** and **AI Security & Defense**.
 
+**Live site:** https://sieve-xi.vercel.app (NEAR testnet). **Demo video (70 s):** [web/sieve.mp4](web/sieve.mp4), also on the site's home page.
+
 ## The problem
 
 Communities that fund work are flooded with AI-written applications: grant volumes rose 57% from 2022 to 2025 across twelve funders (UCL), and curl ended its bug bounty in 2026 over AI-generated reports. An AI reviewer is the obvious answer, and it brings two new problems:

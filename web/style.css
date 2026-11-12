@@ -82,6 +82,7 @@ h3 { font: 600 16px/1.35 var(--mono); margin: 0; }
 .band { background: var(--deep); color: var(--on-blue); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .band { background: #0E3E6B; } }
 :root[data-theme="dark"] .band { background: #0E3E6B; }
+.demo { display: block; width: 100%; aspect-ratio: 16 / 9; background: #161A15; border: 2px solid var(--ink); }
 .band-in { max-width: var(--wrap); margin: 0 auto; padding: 64px var(--gutter); display: grid; grid-template-columns: repeat(3, 1fr); gap: 32px; }
 .band .idx { color: var(--sky); }
 .band .stat p { margin: 10px 0 0; font-size: 13px; color: #CFE9FF; max-width: 30ch; }

@@ -147,6 +147,11 @@ async function home() {
       <div class="stat"><p class="idx">[ 03 / newcomer first payout ]</p>${dots("0.2", "big")}<p>NEAR. A plausible plan can win only this much before delivery evidence is reviewed.</p></div>
     </div></section>
     <section class="section">
+      <h2>Watch the demo</h2>
+      <p class="muted">Seventy seconds: a hidden instruction caught by three enclaves, an honest grant paid tranche by tranche, and the red-team numbers.</p>
+      <video class="demo" src="sieve.mp4" poster="sieve-poster.jpg" controls preload="none" playsinline></video>
+    </section>
+    <section class="section">
       <h2>Open rounds</h2>
       <div class="cols">${grant.map((r) => `<div class="cell"><p class="tag">[ round ${r.id} / grant ]</p>${dots(r.threshold, "small")}
         <p class="kind">Passes at a median of ${r.threshold} of 10</p><h3><a href="#/round/${r.id}">Grants on ${esc(r.dao.split(".")[0])}</a></h3>
