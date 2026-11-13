@@ -9,6 +9,7 @@ npm i
 npm run capture                                                    # page screenshots -> public/shots
 npm run dev                                                        # preview in Remotion Studio
 npm run render                                                     # out/sieve.mp4
+npx remotion still Banner ../assets/banner.png                     # README banner
 ```
 
 `src/verify.json` holds the output of `sieve verify` shown in the last scene.

@@ -1,10 +1,18 @@
 # Sieve
 
+![Sieve: grant reviews you can check. Three signed reviews of proposal 8 (8, 9, 9) with a median of 9; a proposal passes at 7.](assets/banner.png)
+
 Sieve is a grant reviewer for NEAR DAOs that cannot be quietly changed or talked into a score. Three AI models running in NEAR AI Cloud's secure enclaves (TEEs) review each proposal against a rubric stored on chain. A NEAR contract rebuilds the exact prompt, checks each model's signature, reads the score out of the signed answer and takes the median. If the proposal passes, the contract files a payout proposal on the community's Sputnik DAO for members to vote on. The AI never moves money.
 
-Built for the NEAR Hackathon (1 to 14 November 2026), tracks **Social Money** and **AI Security & Defense**.
+Built for the NEAR Hackathon (1 to 14 November 2026), tracks **Social Money**, **AI Security & Defense** and **Privacy & Private AI** (see [Tracks](#tracks)).
 
 **Live site:** https://sieve-xi.vercel.app (NEAR testnet). **Demo video (70 s):** [web/sieve.mp4](web/sieve.mp4), also on the site's home page.
+
+## Tracks
+
+- **Social Money** (main track). Sieve is what a community does with its Sputnik DAO treasury: it decides which grant proposals reach the members' vote, and pays in milestone tranches. The contract files the payout proposal (`add_proposal`) on `sieve-demo.sputnikv2.testnet`; a newcomer's first tranche is 0.2 NEAR, and every later tranche needs delivery evidence that is reviewed the same way. The DAO's members vote on every payout.
+- **AI Security & Defense.** The AI reviewer never holds keys or money: the contract only files proposals, and the DAO keeps the funds. It is a policy engine for AI that leads to payouts: the rubric is fixed on chain, the contract rebuilds the prompt and checks each enclave signature (the track's "TEE attestation" hint), the median of three models counts, and any injection flag blocks a pass. The red-team below measures how often it can be fooled, and the honeypot round pays anyone who manages it.
+- **Privacy & Private AI.** All inference runs in NEAR AI Cloud's TEEs, and the contract accepts a score only with the enclave's ed25519 signature over the exact request and response. Here the enclave is used for integrity rather than secrecy: it proves which model answered which prompt, so nobody, including the operator, can change a review after the fact.
 
 ## The problem
 
@@ -156,6 +164,8 @@ The full list is in [`THREAT_MODEL.md`](THREAT_MODEL.md).
 | `sieve/prompts/` | The deployed rubric, the honeypot rubric and the naive prompt used for comparison |
 | `skills/` | Agent skills for working on Sieve and red-teaming it, with sources and licenses |
 | `results/redteam/` | Signed red-team transcripts and the report |
+| `video/` | The demo video and the README banner, made in Remotion from real testnet data |
+| `assets/` | The README banner |
 
 ## Limits
 
