@@ -10,6 +10,8 @@ npm run capture                                                    # page screen
 npm run dev                                                        # preview in Remotion Studio
 npm run render                                                     # out/sieve.mp4
 npx remotion still Banner ../assets/banner.png                     # README banner
+npx remotion still ResultsTestnet ../assets/results-testnet.png    # README result cards
+npx remotion still ResultsRedteam ../assets/results-redteam.png
 ```
 
 `src/verify.json` holds the output of `sieve verify` shown in the last scene.
