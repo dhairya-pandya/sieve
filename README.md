@@ -4,7 +4,7 @@
 
 ![One grant on NEAR testnet: 28 of 28 signed reviews checked again with 0 failed; 2 DAO payouts filed, 0.2 NEAR then 1 NEAR; a newcomer wins at most 0.2 NEAR before delivery.](assets/results-testnet.png)
 
-![Red-team, 3895 signed reviews: 0 of 10 kinds of hidden instruction got a proposal through; 19 of 20 good proposals still pass; a retrying attacker with made-up detail passes 89% of the time.](assets/results-redteam.png)
+![Red-team, 3895 signed reviews: 0 of 10 kinds of hidden instruction got a proposal through; 19 of 20 good proposals still pass; an attacker model writing its own injection gets through 11% of the time, down from 56% on a naive prompt.](assets/results-redteam.png)
 
 Sieve is a grant reviewer for NEAR DAOs that cannot be quietly changed or talked into a score. Three AI models in NEAR AI Cloud's secure enclaves (TEEs) review each proposal against a rubric stored on chain. A NEAR contract rebuilds the exact prompt, checks each model's signature, reads the score from the signed answer and takes the median. A passing proposal becomes a payout proposal on the community's Sputnik DAO, and members vote. The AI never moves money.
 

@@ -28,7 +28,7 @@ export const redteam: ResultsProps = {
   stats: [
     { value: "0/10", label: "kinds of hidden instruction got a proposal through" },
     { value: "19/20", label: "good proposals still pass" },
-    { value: "89%", label: "retrying attacker with made-up detail passes", bad: true },
+    { value: "11%", label: "attacker model gets through, down from 56%" },
   ],
 };
 
